@@ -13,13 +13,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "../ui";
-import { cleanTitle } from "../../lib/utils";
+import { cleanTitle, getCreationDate } from "../../lib/utils";
 import * as notesService from "../../services/notes";
 import { FolderTreeView } from "./FolderTreeView";
 import {
   PinIcon,
   CopyIcon,
   TrashIcon,
+  MessageSquareIcon,
 } from "../icons";
 import type { Settings } from "../../types/note";
 
@@ -137,6 +138,7 @@ interface NoteItemWithMenuProps {
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
   onRefreshSettings: () => Promise<void> | void;
+  onManageComments: (id: string) => void;
 }
 
 const NoteItemWithMenu = memo(function NoteItemWithMenu({
@@ -152,6 +154,7 @@ const NoteItemWithMenu = memo(function NoteItemWithMenu({
   onDuplicate,
   onDelete,
   onRefreshSettings,
+  onManageComments,
 }: NoteItemWithMenuProps) {
   const handlePin = useCallback(async () => {
     try {
@@ -209,6 +212,13 @@ const NoteItemWithMenu = memo(function NoteItemWithMenu({
             <CopyIcon className="w-4 h-4 stroke-[1.6]" />
             Copy Filepath
           </ContextMenu.Item>
+          <ContextMenu.Item
+            className={menuItemClass}
+            onSelect={() => onManageComments(id)}
+          >
+            <MessageSquareIcon className="w-4 h-4 stroke-[1.6]" />
+            Comments
+          </ContextMenu.Item>
           <ContextMenu.Separator className={menuSeparatorClass} />
           <ContextMenu.Item
             className={
@@ -250,6 +260,8 @@ export function NoteList({
     isLoading,
     searchQuery,
     searchResults,
+    setActiveCommentsNoteId,
+    sortBy,
   } = useNotes();
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -304,8 +316,26 @@ export function NoteList({
         modified: r.modified,
       }));
     }
-    return notes;
-  }, [searchQuery, searchResults, notes]);
+    
+    // Sort flat list: pinned first, then by selected sortBy
+    const sorted = [...notes];
+    sorted.sort((a, b) => {
+      const ap = pinnedIds.has(a.id);
+      const bp = pinnedIds.has(b.id);
+      if (ap !== bp) return ap ? -1 : 1;
+
+      if (sortBy === "alphabetical") {
+        return a.title.localeCompare(b.title);
+      } else if (sortBy === "created") {
+        const ac = getCreationDate(a.id, a.modified);
+        const bc = getCreationDate(b.id, b.modified);
+        return bc - ac; // newest created first
+      } else {
+        return b.modified - a.modified; // newest modified first
+      }
+    });
+    return sorted;
+  }, [searchQuery, searchResults, notes, pinnedIds, sortBy]);
 
   // Listen for focus request from editor (when Escape is pressed)
   useEffect(() => {
@@ -418,6 +448,7 @@ export function NoteList({
             onDuplicate={duplicateNote}
             onDelete={openDeleteDialogForNote}
             onRefreshSettings={refreshSettings}
+            onManageComments={setActiveCommentsNoteId}
           />
         ))}
       </div>

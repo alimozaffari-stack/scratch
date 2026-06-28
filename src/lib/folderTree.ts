@@ -1,4 +1,5 @@
-import type { NoteMetadata, FolderNode } from "../types/note";
+import type { NoteMetadata, FolderNode, SortOption } from "../types/note";
+import { getCreationDate } from "./utils";
 
 export interface FolderTreeData {
   rootNotes: NoteMetadata[];
@@ -9,6 +10,7 @@ export function buildFolderTree(
   notes: NoteMetadata[],
   pinnedIds: Set<string>,
   knownFolders?: string[],
+  sortBy: SortOption = "modified",
 ): FolderTreeData {
   const rootNotes: NoteMetadata[] = [];
   const folderMap = new Map<string, FolderNode>();
@@ -57,7 +59,16 @@ export function buildFolderTree(
       const ap = pinnedIds.has(a.id);
       const bp = pinnedIds.has(b.id);
       if (ap !== bp) return ap ? -1 : 1;
-      return b.modified - a.modified;
+
+      if (sortBy === "alphabetical") {
+        return a.title.localeCompare(b.title);
+      } else if (sortBy === "created") {
+        const ac = getCreationDate(a.id, a.modified);
+        const bc = getCreationDate(b.id, b.modified);
+        return bc - ac; // newest created first
+      } else {
+        return b.modified - a.modified; // newest modified first
+      }
     });
     node.children.forEach(sortNode);
   }
@@ -68,12 +79,21 @@ export function buildFolderTree(
   topLevelFolders.sort((a, b) => a.name.localeCompare(b.name));
   topLevelFolders.forEach(sortNode);
 
-  // Sort root notes: pinned first, then by modified desc
+  // Sort root notes: pinned first, then by sortBy
   rootNotes.sort((a, b) => {
     const ap = pinnedIds.has(a.id);
     const bp = pinnedIds.has(b.id);
     if (ap !== bp) return ap ? -1 : 1;
-    return b.modified - a.modified;
+
+    if (sortBy === "alphabetical") {
+      return a.title.localeCompare(b.title);
+    } else if (sortBy === "created") {
+      const ac = getCreationDate(a.id, a.modified);
+      const bc = getCreationDate(b.id, b.modified);
+      return bc - ac;
+    } else {
+      return b.modified - a.modified;
+    }
   });
 
   return { rootNotes, folders: topLevelFolders };

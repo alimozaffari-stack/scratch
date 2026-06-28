@@ -58,7 +58,7 @@ function isAllowedUrlScheme(url: string): boolean {
 }
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
-import { useOptionalNotes } from "../../context/NotesContext";
+import { useOptionalNotes, extractComments } from "../../context/NotesContext";
 import { useTheme } from "../../context/ThemeContext";
 import { Frontmatter } from "./Frontmatter";
 import { BlockMathEditor } from "./BlockMathEditor";
@@ -67,8 +67,11 @@ import { SearchToolbar } from "./SearchToolbar";
 import { SlashCommand } from "./SlashCommand";
 import { Wikilink, type WikilinkStorage } from "./Wikilink";
 import { WikilinkSuggestion } from "./WikilinkSuggestion";
+import { FootnoteReference } from "./FootnoteReference";
 import { EditorWidthHandles } from "./EditorWidthHandle";
 import { ScratchBlockMath, normalizeBlockMath } from "./MathExtensions";
+import { CollapsibleHeadings } from "./CollapsibleHeadings";
+import { TableOfContents } from "./TableOfContents";
 import { cn } from "../../lib/utils";
 import { plainTextFromMarkdown } from "../../lib/plainText";
 import { Button, IconButton, ToolbarButton, Tooltip } from "../ui";
@@ -83,6 +86,8 @@ import {
   Heading2Icon,
   Heading3Icon,
   Heading4Icon,
+  Heading5Icon,
+  Heading6Icon,
   ListIcon,
   ListOrderedIcon,
   CheckSquareIcon,
@@ -107,6 +112,8 @@ import {
   MarkdownIcon,
   MarkdownOffIcon,
   FolderPlusIcon,
+  MessageSquareIcon,
+  FootnoteIcon,
 } from "../icons";
 
 function formatDateTime(timestamp: number): string {
@@ -246,6 +253,7 @@ interface FormatBarProps {
   onAddLink: () => void;
   onAddBlockMath: () => void;
   onAddImage: () => void;
+  onAddFootnote: () => void;
 }
 
 // FormatBar must re-render with parent to reflect editor.isActive() state changes
@@ -255,6 +263,7 @@ function FormatBar({
   onAddLink,
   onAddBlockMath,
   onAddImage,
+  onAddFootnote,
 }: FormatBarProps) {
   const [tableMenuOpen, setTableMenuOpen] = useState(false);
 
@@ -313,6 +322,20 @@ function FormatBar({
         title={`Heading 4 (${mod}${isMac ? "" : "+"}${alt}${isMac ? "" : "+"}4)`}
       >
         <Heading4Icon className="w-4.5 h-4.5 stroke-[1.5]" />
+      </ToolbarButton>
+      <ToolbarButton
+        onClick={() => editor.chain().focus().toggleHeading({ level: 5 }).run()}
+        isActive={editor.isActive("heading", { level: 5 })}
+        title={`Heading 5 (${mod}${isMac ? "" : "+"}${alt}${isMac ? "" : "+"}5)`}
+      >
+        <Heading5Icon className="w-4.5 h-4.5 stroke-[1.5]" />
+      </ToolbarButton>
+      <ToolbarButton
+        onClick={() => editor.chain().focus().toggleHeading({ level: 6 }).run()}
+        isActive={editor.isActive("heading", { level: 6 })}
+        title={`Heading 6 (${mod}${isMac ? "" : "+"}${alt}${isMac ? "" : "+"}6)`}
+      >
+        <Heading6Icon className="w-4.5 h-4.5 stroke-[1.5]" />
       </ToolbarButton>
 
       <div className="w-px h-4.5 border-l border-border mx-2" />
@@ -392,6 +415,13 @@ function FormatBar({
       </ToolbarButton>
       <ToolbarButton onClick={onAddImage} isActive={false} title="Add Image">
         <ImageIcon className="w-4.5 h-4.5 stroke-[1.5]" />
+      </ToolbarButton>
+      <ToolbarButton
+        onClick={onAddFootnote}
+        isActive={editor.isActive("footnoteReference")}
+        title={`Insert Footnote (${mod}${isMac ? "" : "+"}${alt}${isMac ? "" : "+"}F)`}
+      >
+        <FootnoteIcon className="w-4.5 h-4.5 stroke-[1.5]" />
       </ToolbarButton>
       <DropdownMenu.Root open={tableMenuOpen} onOpenChange={setTableMenuOpen}>
         <Tooltip content="Insert Table">
@@ -546,6 +576,8 @@ export function Editor({
   const pinNote = notesCtx?.pinNote;
   const unpinNote = notesCtx?.unpinNote;
   const notes = notesCtx?.notes;
+  const footnotesMap = notesCtx?.footnotesMap ?? {};
+  const addFootnote = notesCtx?.addFootnote;
   const { textDirection } = useTheme();
   const [isSaving, setIsSaving] = useState(false);
   // Force re-render when selection changes to update toolbar active states
@@ -567,6 +599,11 @@ export function Editor({
   // Source mode state
   const [sourceMode, setSourceMode] = useState(false);
   const [sourceContent, setSourceContent] = useState("");
+  const [editorContextMenu, setEditorContextMenu] = useState<{
+    x: number;
+    y: number;
+    selectedText: string;
+  } | null>(null);
   const sourceTimeoutRef = useRef<number | null>(null);
   const sourceModeTransitionRef = useRef<{
     topBlockIndex: number;
@@ -1047,10 +1084,11 @@ export function Editor({
     textDirection,
     extensions: [
       StarterKit.configure({
-        heading: {
-          levels: [1, 2, 3, 4, 5, 6],
-        },
+        heading: false,
         codeBlock: false,
+      }),
+      CollapsibleHeadings.configure({
+        levels: [1, 2, 3, 4, 5, 6],
       }),
       CodeBlockLowlight.extend({
         addNodeView() {
@@ -1117,6 +1155,7 @@ export function Editor({
       SlashCommand,
       Wikilink,
       WikilinkSuggestion,
+      FootnoteReference,
       ScratchBlockMath.configure({
         katexOptions: {
           throwOnError: false,
@@ -1132,6 +1171,16 @@ export function Editor({
       attributes: {
         class:
           "prose prose-lg dark:prose-invert max-w-3xl mx-auto focus:outline-none min-h-full px-6 pt-8 pb-24",
+      },
+      handleClickOn: (_view, _pos, node, _nodePos, _event, _direct) => {
+        if (node.type.name === "footnoteReference") {
+          const label = node.attrs.label;
+          window.dispatchEvent(
+            new CustomEvent("editor:focus-footnote", { detail: { label } })
+          );
+          return true;
+        }
+        return false;
       },
       // Serialize copied text as markdown instead of plain text
       clipboardTextSerializer: (slice) => {
@@ -1268,6 +1317,65 @@ export function Editor({
   const lastSaveRef = useRef<{ noteId: string; content: string } | null>(null);
   // Track reloadVersion to detect manual refreshes
   const lastReloadVersionRef = useRef(0);
+
+  // Word & Character count stats
+  const getStats = () => {
+    let rawText = "";
+    if (sourceMode) {
+      rawText = sourceContent || "";
+    } else if (editor) {
+      rawText = editor.state.doc.textContent || "";
+    }
+    
+    // Clean text from comments
+    const { cleanContent } = extractComments(rawText);
+    const trimmed = cleanContent.trim();
+    
+    const chars = trimmed.length;
+    const words = trimmed ? trimmed.split(/\s+/).filter(Boolean).length : 0;
+    const readingTime = Math.max(1, Math.ceil(words / 200));
+    
+    return { words, chars, readingTime };
+  };
+
+  const { words, chars, readingTime } = getStats();
+
+  // Custom Selection Context Menu Handler
+  const handleEditorContextMenu = useCallback((e: React.MouseEvent) => {
+    if (sourceMode) {
+      const textarea = e.currentTarget.querySelector("textarea") as HTMLTextAreaElement | null;
+      if (textarea) {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        if (start !== end) {
+          const selectedText = textarea.value.substring(start, end).trim();
+          if (selectedText) {
+            e.preventDefault();
+            setEditorContextMenu({
+              x: e.clientX,
+              y: e.clientY,
+              selectedText,
+            });
+            return;
+          }
+        }
+      }
+    } else if (editor) {
+      const { state } = editor;
+      const { selection } = state;
+      if (!selection.empty) {
+        const selectedText = state.doc.textBetween(selection.from, selection.to, " ").trim();
+        if (selectedText) {
+          e.preventDefault();
+          setEditorContextMenu({
+            x: e.clientX,
+            y: e.clientY,
+            selectedText,
+          });
+        }
+      }
+    }
+  }, [editor, sourceMode]);
 
   // Notify parent component when editor is ready
   useEffect(() => {
@@ -1711,6 +1819,84 @@ export function Editor({
       }
     }
   }, [editor]);
+
+  // Footnote insertion handler
+  const handleAddFootnote = useCallback(async () => {
+    if (!currentNote) return;
+    const noteId = currentNote.id;
+    const currentFootnotes = footnotesMap[noteId] || [];
+
+    // Auto-calculate next footnote label/number
+    let nextNum = 1;
+    currentFootnotes.forEach((f) => {
+      const num = parseInt(f.id, 10);
+      if (!isNaN(num) && num >= nextNum) {
+        nextNum = num + 1;
+      }
+    });
+    const nextLabel = String(nextNum);
+
+    // Register empty footnote text in context/disk
+    if (addFootnote) {
+      await addFootnote(noteId, nextLabel, "");
+    }
+
+    if (sourceMode) {
+      const textarea = document.querySelector("textarea") as HTMLTextAreaElement | null;
+      if (textarea) {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const text = textarea.value;
+        const before = text.substring(0, start);
+        const after = text.substring(end);
+        const insertText = `[^${nextLabel}]`;
+        const newContent = before + insertText + after;
+
+        setSourceContent(newContent);
+
+        setTimeout(() => {
+          textarea.focus();
+          textarea.setSelectionRange(start + insertText.length, start + insertText.length);
+        }, 0);
+      }
+    } else {
+      if (editor) {
+        editor
+          .chain()
+          .focus()
+          .insertContent({
+            type: "footnoteReference",
+            attrs: { label: nextLabel },
+          })
+          .run();
+      }
+    }
+  }, [currentNote, footnotesMap, addFootnote, sourceMode, editor]);
+
+  // Keyboard shortcut for Cmd+Alt+F to add footnote
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.altKey && e.key === "f") {
+        const target = e.target as HTMLElement;
+        const isInEditor = target.closest(".ProseMirror") || target.tagName === "TEXTAREA";
+        if (isInEditor) {
+          e.preventDefault();
+          handleAddFootnote();
+        }
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [handleAddFootnote]);
+
+  // Listen for insert footnote events from sidebar or other panels
+  useEffect(() => {
+    const handler = () => {
+      handleAddFootnote();
+    };
+    window.addEventListener("editor:insert-footnote", handler);
+    return () => window.removeEventListener("editor:insert-footnote", handler);
+  }, [handleAddFootnote]);
 
   // Listen for slash command image insertion
   useEffect(() => {
@@ -2367,23 +2553,24 @@ export function Editor({
           onAddLink={handleAddLink}
           onAddBlockMath={handleAddBlockMath}
           onAddImage={handleAddImage}
+          onAddFootnote={handleAddFootnote}
         />
       </div>
 
       {/* Editor content area with resize handles overlay */}
-      <div data-editor-content-area className="flex-1 relative overflow-hidden">
+      <div data-editor-content-area className="flex-1 relative overflow-hidden flex flex-row">
         {!focusMode && !sourceMode && (
           <EditorWidthHandles containerRef={scrollContainerRef} />
         )}
         <div
           data-editor-scroll
           ref={scrollContainerRef}
-          className="absolute inset-0 overflow-y-auto overflow-x-hidden"
+          className="flex-1 h-full overflow-y-auto overflow-x-hidden relative"
           dir={textDirection}
         >
           {sourceMode ? (
             /* Markdown source textarea */
-            <div className="h-full">
+            <div className="h-full" onContextMenu={handleEditorContextMenu}>
               <textarea
                 value={sourceContent}
                 onChange={(e) => handleSourceChange(e.target.value)}
@@ -2435,6 +2622,13 @@ export function Editor({
                 className="h-full"
                 onContextMenu={async (e) => {
                   if (!editor) return;
+
+                  // If we have highlighted text, show our custom selection context menu and keep selection
+                  const { selection } = editor.state;
+                  if (!selection.empty) {
+                    handleEditorContextMenu(e);
+                    return;
+                  }
 
                   // Get the position at the click coordinates
                   const clickPos = editor.view.posAtCoords({
@@ -2612,7 +2806,71 @@ export function Editor({
             </>
           )}
         </div>
+
+        {!focusMode && (
+          <TableOfContents
+            editor={editor}
+            sourceMode={sourceMode}
+            sourceContent={sourceContent}
+          />
+        )}
       </div>
+
+      {/* Editor Status Bar */}
+      <div
+        className={cn(
+          "h-8 border-t border-border/40 px-4 bg-bg flex items-center justify-between text-[11px] font-medium text-text-muted select-none shrink-0 transition-opacity duration-300",
+          focusMode ? "opacity-0 pointer-events-none" : "opacity-100"
+        )}
+      >
+        <div className="flex items-center gap-3">
+          <span>{words} {words === 1 ? "word" : "words"}</span>
+          <span className="text-border/40">•</span>
+          <span>{chars} {chars === 1 ? "character" : "characters"}</span>
+          <span className="text-border/40">•</span>
+          <span>{readingTime} min read</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span>Markdown</span>
+        </div>
+      </div>
+
+      {/* Custom Selection Context Menu */}
+      {editorContextMenu && (
+        <>
+          {/* Invisible click-away backdrop */}
+          <div
+            className="fixed inset-0 z-50"
+            onClick={() => setEditorContextMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setEditorContextMenu(null);
+            }}
+          />
+          <div
+            style={{
+              position: "fixed",
+              top: editorContextMenu.y,
+              left: editorContextMenu.x,
+            }}
+            className="z-50 min-w-48 bg-bg border border-border rounded-lg shadow-xl py-1 animate-scale-in text-xs text-text font-sans"
+          >
+            <button
+              onClick={() => {
+                if (currentNote && notesCtx) {
+                  const quote = `> ${editorContextMenu.selectedText}\n\n`;
+                  notesCtx.setActiveCommentsNoteId(currentNote.id, quote);
+                }
+                setEditorContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-1.5 hover:bg-bg-muted focus:bg-bg-muted flex items-center gap-2 cursor-pointer transition-colors font-medium text-text"
+            >
+              <MessageSquareIcon className="w-4 h-4 text-text-muted" />
+              <span>Comment on Highlight...</span>
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

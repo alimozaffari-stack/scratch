@@ -158,6 +158,25 @@ export function StrikethroughIcon({ className = "w-4.5 h-4.5" }: IconProps) {
   );
 }
 
+export function FootnoteIcon({ className = "w-4.5 h-4.5" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M3 5h11m-11 6h11m-11 6h6" />
+      <circle cx="17.5" cy="15.5" r="2.5" />
+      <path d="M17.5 13v5h1" />
+    </svg>
+  );
+}
+
 export function Heading1Icon({ className = "w-4.5 h-4.5" }: IconProps) {
   return (
     <svg
@@ -251,6 +270,55 @@ export function Heading4Icon({ className = "w-4.5 h-4.5" }: IconProps) {
       <path d="M4 12h8" />
       <path d="M3 6h2" />
       <path d="M11 6h2" />
+    </svg>
+  );
+}
+
+export function Heading5Icon({ className = "w-4.5 h-4.5" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M4 6v12" />
+      <path d="M12 6v12" />
+      <path d="M11 18h2" />
+      <path d="M3 18h2" />
+      <path d="M4 12h8" />
+      <path d="M3 6h2" />
+      <path d="M11 6h2" />
+      <path d="M17 13v-3h4" />
+      <path d="M17 17.5c0 .8.7 1.5 1.5 1.5h1c1 0 1.5-.5 1.5-1.5V16c0-1-.5-1.5-1.5-1.5h-2" />
+    </svg>
+  );
+}
+
+export function Heading6Icon({ className = "w-4.5 h-4.5" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M4 6v12" />
+      <path d="M12 6v12" />
+      <path d="M11 18h2" />
+      <path d="M3 18h2" />
+      <path d="M4 12h8" />
+      <path d="M3 6h2" />
+      <path d="M11 6h2" />
+      <path d="M18 10a3 3 0 0 0-3 3v2a3 3 0 0 0 3 3h1a3 3 0 0 0 3-3v-1a3 3 0 0 0-3-3h-4" />
     </svg>
   );
 }
@@ -993,6 +1061,22 @@ export function AddNoteIcon({ className = "w-4.5 h-4.5" }: IconProps) {
   );
 }
 
+export function MessageSquareIcon({ className = "w-4.5 h-4.5" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+
 export function TrashIcon({ className = "w-4.5 h-4.5" }: IconProps) {
   return (
     <svg
@@ -1204,6 +1288,26 @@ export function ArrowDownToLineIcon({ className = "w-4.5 h-4.5" }: IconProps) {
       <path d="M6 15l6 6" />
       <path d="M18 15l-6 6" />
       <path d="M6 3h12" />
+    </svg>
+  );
+}
+
+export function SortIcon({ className = "w-4.5 h-4.5" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M3 9l4 -4l4 4" />
+      <path d="M7 5v14" />
+      <path d="M21 15l-4 4l-4 -4" />
+      <path d="M17 19v-14" />
     </svg>
   );
 }

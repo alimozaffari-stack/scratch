@@ -19,6 +19,7 @@ import {
   OllamaIcon,
 } from "./components/icons";
 import { AiEditModal } from "./components/ai/AiEditModal";
+import { CommentsModal } from "./components/notes/CommentsModal";
 import { AiResponseToast } from "./components/ai/AiResponseToast";
 import { KeyboardShortcutsModal } from "./components/shortcuts/KeyboardShortcutsModal";
 import { PreviewApp } from "./components/preview/PreviewApp";
@@ -524,6 +525,8 @@ function AppContent() {
         onExecute={handleAiEdit}
         isExecuting={aiEditing}
       />
+
+      <CommentsModal />
 
       {/* AI Editing Overlay */}
       {aiEditing && (

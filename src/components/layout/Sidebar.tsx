@@ -22,6 +22,8 @@ import {
   AddNoteIcon,
   FolderPlusIcon,
   NoteIcon,
+  SortIcon,
+  CheckIcon,
 } from "../icons";
 import { mod, shift, isMac } from "../../lib/platform";
 import * as notesService from "../../services/notes";
@@ -42,6 +44,8 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
     selectedNoteId,
     moveNote,
     moveFolder,
+    sortBy,
+    setSortBy,
   } = useNotes();
   const [searchOpen, setSearchOpen] = useState(false);
   const [inputValue, setInputValue] = useState(searchQuery);
@@ -331,6 +335,60 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
               <SearchIcon className="w-4.25 h-4.25 stroke-[1.5]" />
             )}
           </IconButton>
+
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <IconButton
+                variant="ghost"
+                title="Sort Notes"
+              >
+                <SortIcon className="w-4.5 h-4.5 stroke-[1.5]" />
+              </IconButton>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                className="min-w-44 bg-bg border border-border rounded-md shadow-lg py-1 z-50"
+                sideOffset={5}
+                align="end"
+                onCloseAutoFocus={(e) => e.preventDefault()}
+              >
+                <div className="px-3 py-1.5 text-2xs font-semibold text-text-muted uppercase tracking-wider">
+                  Sort Notes By
+                </div>
+                
+                <DropdownMenu.Item
+                  className="px-3 py-1.5 text-sm text-text cursor-pointer outline-none hover:bg-bg-muted focus:bg-bg-muted flex items-center justify-between gap-2 rounded-sm"
+                  onSelect={() => setSortBy("modified")}
+                >
+                  <span>Last Modified</span>
+                  {sortBy === "modified" && (
+                    <CheckIcon className="w-4 h-4 text-accent shrink-0" />
+                  )}
+                </DropdownMenu.Item>
+
+                <DropdownMenu.Item
+                  className="px-3 py-1.5 text-sm text-text cursor-pointer outline-none hover:bg-bg-muted focus:bg-bg-muted flex items-center justify-between gap-2 rounded-sm"
+                  onSelect={() => setSortBy("created")}
+                >
+                  <span>Creation Date</span>
+                  {sortBy === "created" && (
+                    <CheckIcon className="w-4 h-4 text-accent shrink-0" />
+                  )}
+                </DropdownMenu.Item>
+
+                <DropdownMenu.Item
+                  className="px-3 py-1.5 text-sm text-text cursor-pointer outline-none hover:bg-bg-muted focus:bg-bg-muted flex items-center justify-between gap-2 rounded-sm"
+                  onSelect={() => setSortBy("alphabetical")}
+                >
+                  <span>Alphabetical</span>
+                  {sortBy === "alphabetical" && (
+                    <CheckIcon className="w-4 h-4 text-accent shrink-0" />
+                  )}
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
+
           {foldersEnabled ? (
             <DropdownMenu.Root
               open={plusMenuOpen}

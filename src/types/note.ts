@@ -5,6 +5,20 @@ export interface NoteMetadata {
   modified: number;
 }
 
+export type SortOption = "modified" | "created" | "alphabetical";
+
+
+export interface Comment {
+  id: string;
+  text: string;
+  timestamp: number;
+}
+
+export interface Footnote {
+  id: string;
+  text: string;
+}
+
 export interface Note {
   id: string;
   title: string;

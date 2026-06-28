@@ -33,6 +33,7 @@ import {
   PinIcon,
   CopyIcon,
   ArrowUpIcon,
+  MessageSquareIcon,
 } from "../icons";
 import * as notesService from "../../services/notes";
 import type { FolderNode, NoteMetadata, Settings } from "../../types/note";
@@ -75,6 +76,7 @@ interface FileItemProps {
   onDelete: (id: string) => void;
   onMoveToParent?: (id: string, targetFolder: string) => void;
   focusedItemKey?: string | null;
+  onManageComments: (id: string) => void;
 }
 
 const FileItem = memo(function FileItem({
@@ -90,6 +92,7 @@ const FileItem = memo(function FileItem({
   onDelete,
   onMoveToParent,
   focusedItemKey,
+  onManageComments,
 }: FileItemProps) {
   const itemRef = useRef<HTMLDivElement>(null);
   const handleClick = useCallback(
@@ -206,6 +209,13 @@ const FileItem = memo(function FileItem({
             <CopyIcon className="w-4 h-4 stroke-[1.6]" />
             Copy Filepath
           </ContextMenu.Item>
+          <ContextMenu.Item
+            className={menuItemClass}
+            onSelect={() => onManageComments(note.id)}
+          >
+            <MessageSquareIcon className="w-4 h-4 stroke-[1.6]" />
+            Comments
+          </ContextMenu.Item>
           {noteParentFolder && onMoveToParent && (
             <>
               <ContextMenu.Separator className={menuSeparatorClass} />
@@ -267,6 +277,7 @@ interface FolderItemProps {
   onDeleteNote: (id: string) => void;
   onMoveNoteToParent: (id: string, targetFolder: string) => void;
   onMoveFolderToParent: (path: string, targetParent: string) => void;
+  onManageComments: (id: string) => void;
 }
 
 const FolderItemComponent = memo(function FolderItem({
@@ -289,6 +300,7 @@ const FolderItemComponent = memo(function FolderItem({
   onDeleteNote,
   onMoveNoteToParent,
   onMoveFolderToParent,
+  onManageComments,
 }: FolderItemProps) {
   const isCollapsed = collapsedFolders.has(folder.path);
   const noteCount = countNotesInFolder(folder);
@@ -371,6 +383,7 @@ const FolderItemComponent = memo(function FolderItem({
                   onDeleteNote={onDeleteNote}
                   onMoveNoteToParent={onMoveNoteToParent}
                   onMoveFolderToParent={onMoveFolderToParent}
+                  onManageComments={onManageComments}
                 />
               ))}
               {folder.notes.map((note) => (
@@ -388,6 +401,7 @@ const FolderItemComponent = memo(function FolderItem({
                   onDelete={onDeleteNote}
                   onMoveToParent={onMoveNoteToParent}
                   focusedItemKey={focusedItemKey}
+                  onManageComments={onManageComments}
                 />
               ))}
               {isEmpty && (
@@ -504,6 +518,8 @@ export function FolderTreeView({
     deleteNote,
     moveNote,
     moveFolder,
+    setActiveCommentsNoteId,
+    sortBy,
   } = useNotes();
 
   const [collapsedFolders, setCollapsedFolders] =
@@ -535,8 +551,8 @@ export function FolderTreeView({
   }, [collapsedFolders]);
 
   const tree = useMemo(
-    () => buildFolderTree(notes, pinnedIds, knownFolders),
-    [notes, pinnedIds, knownFolders],
+    () => buildFolderTree(notes, pinnedIds, knownFolders, sortBy),
+    [notes, pinnedIds, knownFolders, sortBy],
   );
 
   const handleToggleCollapse = useCallback((path: string) => {
@@ -871,6 +887,7 @@ export function FolderTreeView({
             onDuplicate={duplicateNote}
             onDelete={openDeleteNoteDialog}
             focusedItemKey={focusedItemKey}
+            onManageComments={setActiveCommentsNoteId}
           />
         ))}
 
@@ -897,6 +914,7 @@ export function FolderTreeView({
             onDeleteNote={openDeleteNoteDialog}
             onMoveNoteToParent={moveNote}
             onMoveFolderToParent={moveFolder}
+            onManageComments={setActiveCommentsNoteId}
           />
         ))}
 
@@ -915,6 +933,7 @@ export function FolderTreeView({
             onDuplicate={duplicateNote}
             onDelete={openDeleteNoteDialog}
             focusedItemKey={focusedItemKey}
+            onManageComments={setActiveCommentsNoteId}
           />
         ))}
       </div>
