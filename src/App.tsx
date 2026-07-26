@@ -22,7 +22,6 @@ import { AiEditModal } from "./components/ai/AiEditModal";
 import { CommentsModal } from "./components/notes/CommentsModal";
 import { AiResponseToast } from "./components/ai/AiResponseToast";
 import { KeyboardShortcutsModal } from "./components/shortcuts/KeyboardShortcutsModal";
-import { PreviewApp } from "./components/preview/PreviewApp";
 import {
   check as checkForUpdate,
   type Update,
@@ -30,20 +29,6 @@ import {
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import * as aiService from "./services/ai";
 import type { AiProvider } from "./services/ai";
-
-// Detect preview mode from URL search params
-function getWindowMode(): {
-  isPreview: boolean;
-  previewFile: string | null;
-} {
-  const params = new URLSearchParams(window.location.search);
-  const mode = params.get("mode");
-  const file = params.get("file");
-  return {
-    isPreview: mode === "preview" && !!file,
-    previewFile: file,
-  };
-}
 
 type ViewState = "notes" | "settings";
 
@@ -127,7 +112,7 @@ function AppContent() {
 
   // AI Edit handler
   const handleAiEdit = useCallback(
-    async (prompt: string, ollamaModel?: string) => {
+    async (prompt: string, modelName?: string) => {
       if (!currentNote) {
         toast.error("No note selected");
         return;
@@ -145,7 +130,19 @@ function AppContent() {
           result = await aiService.executeOllamaEdit(
             currentNote.path,
             prompt,
-            ollamaModel || "qwen3:8b",
+            modelName || "qwen3:8b",
+          );
+        } else if (aiProvider === "lmstudio") {
+          result = await aiService.executeLMStudioEdit(
+            currentNote.path,
+            prompt,
+            modelName,
+          );
+        } else if (aiProvider === "antigravity") {
+          result = await aiService.executeAntigravityEdit(
+            currentNote.path,
+            prompt,
+            modelName,
           );
         } else {
           result = await aiService.executeClaudeEdit(currentNote.path, prompt);
@@ -372,7 +369,7 @@ function AppContent() {
       ) {
         e.preventDefault();
         const currentIndex = displayItems.findIndex(
-          (n) => n.id === selectedNoteId,
+          (n: { id: string }) => n.id === selectedNoteId,
         );
         let newIndex: number;
 
@@ -634,9 +631,7 @@ function UpdateToast({
 }
 
 function App() {
-  const { isPreview, previewFile } = useMemo(getWindowMode, []);
-
-  // Cmd/Ctrl+W — close window (works in both preview and folder mode)
+  // Cmd/Ctrl+W — close window
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "w") {
@@ -656,26 +651,12 @@ function App() {
     );
   }, []);
 
-  // Check for app updates on startup (folder mode only)
+  // Check for app updates on startup
   useEffect(() => {
-    if (isPreview) return;
     const timer = setTimeout(() => showUpdateToast(), 3000);
     return () => clearTimeout(timer);
-  }, [isPreview]);
+  }, []);
 
-  // Preview mode: lightweight editor without sidebar, search, git
-  if (isPreview && previewFile) {
-    return (
-      <ThemeProvider>
-        <Toaster />
-        <TooltipProvider>
-          <PreviewApp filePath={decodeURIComponent(previewFile)} />
-        </TooltipProvider>
-      </ThemeProvider>
-    );
-  }
-
-  // Folder mode: full app with sidebar, search, git, etc.
   return (
     <ThemeProvider>
       <Toaster />

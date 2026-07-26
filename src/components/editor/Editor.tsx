@@ -18,6 +18,9 @@ import Link from "@tiptap/extension-link";
 import Image from "@tiptap/extension-image";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
+import Highlight from "@tiptap/extension-highlight";
+import { TextStyle } from "@tiptap/extension-text-style";
+import { Color } from "@tiptap/extension-color";
 import { TableKit } from "@tiptap/extension-table";
 import { Markdown } from "@tiptap/markdown";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
@@ -25,6 +28,13 @@ import { lowlight } from "./lowlight";
 import { CodeBlockView } from "./CodeBlockView";
 import { Extension, InputRule } from "@tiptap/core";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { DOMSerializer } from "@tiptap/pm/model";
+import { marked } from "marked";
+import {
+  formatMarkdownTable,
+  formatAllTablesInMarkdown,
+  repairMarkdownText,
+} from "../../lib/markdownFormatter";
 import {
   NodeSelection,
   Plugin,
@@ -99,6 +109,8 @@ import {
   LinkIcon,
   BracketsIcon,
   ImageIcon,
+  CalendarIcon,
+  LetterCaseIcon,
   TableIcon,
   SpinnerIcon,
   CircleCheckIcon,
@@ -114,6 +126,10 @@ import {
   FolderPlusIcon,
   MessageSquareIcon,
   FootnoteIcon,
+  HighlighterIcon,
+  PasteIcon,
+  ScissorsIcon,
+  FontColorIcon,
 } from "../icons";
 
 function formatDateTime(timestamp: number): string {
@@ -254,6 +270,7 @@ interface FormatBarProps {
   onAddBlockMath: () => void;
   onAddImage: () => void;
   onAddFootnote: () => void;
+  onToggleCase: () => void;
 }
 
 // FormatBar must re-render with parent to reflect editor.isActive() state changes
@@ -264,10 +281,26 @@ function FormatBar({
   onAddBlockMath,
   onAddImage,
   onAddFootnote,
+  onToggleCase,
 }: FormatBarProps) {
   const [tableMenuOpen, setTableMenuOpen] = useState(false);
+  const [colorMenuOpen, setColorMenuOpen] = useState(false);
 
   if (!editor) return null;
+
+  const fontColors = [
+    { name: "Default", color: "" },
+    { name: "Red", color: "#ef4444" },
+    { name: "Orange", color: "#f97316" },
+    { name: "Amber", color: "#f59e0b" },
+    { name: "Green", color: "#10b981" },
+    { name: "Teal", color: "#14b8a6" },
+    { name: "Blue", color: "#3b82f6" },
+    { name: "Indigo", color: "#6366f1" },
+    { name: "Purple", color: "#a855f7" },
+    { name: "Pink", color: "#ec4899" },
+    { name: "Gray", color: "#6b7280" },
+  ];
 
   return (
     <div className="flex items-center gap-1 px-3 pb-2 border-b border-border overflow-x-auto scrollbar-none">
@@ -292,6 +325,80 @@ function FormatBar({
       >
         <StrikethroughIcon className="w-4.5 h-4.5 stroke-[1.5]" />
       </ToolbarButton>
+      <ToolbarButton
+        onClick={() => editor.chain().focus().toggleHighlight({ color: "#fef08a" }).run()}
+        isActive={editor.isActive("highlight")}
+        title={`Highlight (${mod}${isMac ? "" : "+"}${shift}${isMac ? "" : "+"}H)`}
+      >
+        <HighlighterIcon className="w-4.5 h-4.5 stroke-[1.5]" />
+      </ToolbarButton>
+      <ToolbarButton
+        onClick={onToggleCase}
+        isActive={false}
+        title="Toggle Uppercase / Lowercase"
+      >
+        <LetterCaseIcon className="w-4.5 h-4.5 stroke-[1.5]" />
+      </ToolbarButton>
+
+      {/* Font Color Picker */}
+      <div className="relative">
+        <ToolbarButton
+          onClick={() => setColorMenuOpen(!colorMenuOpen)}
+          isActive={editor.isActive("textStyle")}
+          title="Text Color"
+        >
+          <FontColorIcon className="w-4.5 h-4.5 stroke-[1.5]" />
+        </ToolbarButton>
+
+        {colorMenuOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setColorMenuOpen(false)}
+            />
+            <div className="absolute top-full left-0 mt-1 z-50 p-2.5 bg-bg rounded-lg shadow-xl border border-border flex flex-col gap-2 min-w-[180px]">
+              <div className="text-[11px] font-medium text-text-muted px-1">
+                Text Color
+              </div>
+              <div className="grid grid-cols-6 gap-1.5">
+                {fontColors.map((item) => (
+                  <button
+                    key={item.name}
+                    title={item.name}
+                    onClick={() => {
+                      if (item.color) {
+                        editor.chain().focus().setColor(item.color).run();
+                      } else {
+                        editor.chain().focus().unsetColor().run();
+                      }
+                      setColorMenuOpen(false);
+                    }}
+                    className="w-5.5 h-5.5 rounded-full border border-black/10 dark:border-white/20 flex items-center justify-center hover:scale-110 transition-transform cursor-pointer relative shadow-xs"
+                    style={{ backgroundColor: item.color || "transparent" }}
+                  >
+                    {!item.color && (
+                      <div className="w-3 h-0.5 bg-red-500 rotate-45" />
+                    )}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 pt-1.5 border-t border-border/60">
+                <label className="text-xs text-text-muted cursor-pointer flex items-center gap-1.5 hover:text-text">
+                  <input
+                    type="color"
+                    onChange={(e) => {
+                      editor.chain().focus().setColor(e.target.value).run();
+                      setColorMenuOpen(false);
+                    }}
+                    className="w-5 h-5 rounded cursor-pointer border-0 p-0 bg-transparent"
+                  />
+                  <span>Custom color...</span>
+                </label>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
 
       <div className="w-px h-4.5 border-l border-border mx-2" />
 
@@ -413,7 +520,7 @@ function FormatBar({
       >
         <BracketsIcon className="w-4.5 h-4.5 stroke-[1.5]" />
       </ToolbarButton>
-      <ToolbarButton onClick={onAddImage} isActive={false} title="Add Image">
+      <ToolbarButton onClick={onAddImage} isActive={false} title="Insert Image">
         <ImageIcon className="w-4.5 h-4.5 stroke-[1.5]" />
       </ToolbarButton>
       <ToolbarButton
@@ -579,13 +686,20 @@ export function Editor({
   const footnotesMap = notesCtx?.footnotesMap ?? {};
   const addFootnote = notesCtx?.addFootnote;
   const { textDirection } = useTheme();
+  const isMac = typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.userAgent);
+  const mod = isMac ? "⌘" : "Ctrl";
   const [isSaving, setIsSaving] = useState(false);
+  const [isUnsaved, setIsUnsaved] = useState(false);
   // Force re-render when selection changes to update toolbar active states
   const [, setSelectionKey] = useState(0);
   const [copyMenuOpen, setCopyMenuOpen] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
   // Delay transition classes until after initial mount to avoid format bar height animation on note load
   const [hasTransitioned, setHasTransitioned] = useState(false);
+  useEffect(() => {
+    setIsUnsaved(false);
+  }, [currentNote?.id]);
+
   useEffect(() => {
     if (!hasTransitioned && currentNote) {
       const id = requestAnimationFrame(() => setHasTransitioned(true));
@@ -603,6 +717,8 @@ export function Editor({
     x: number;
     y: number;
     selectedText: string;
+    hasSelection: boolean;
+    isHighlighted: boolean;
   } | null>(null);
   const sourceTimeoutRef = useRef<number | null>(null);
   const sourceModeTransitionRef = useRef<{
@@ -769,6 +885,7 @@ export function Editor({
       try {
         lastSaveRef.current = { noteId, content };
         await saveNote(content, noteId);
+        setIsUnsaved(false);
       } finally {
         setIsSaving(false);
       }
@@ -793,6 +910,7 @@ export function Editor({
 
   // Schedule a debounced save (markdown computed only when timer fires)
   const scheduleSave = useCallback(() => {
+    setIsUnsaved(true);
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
@@ -1138,6 +1256,11 @@ export function Editor({
       TaskItem.configure({
         nested: true,
       }),
+      Highlight.configure({
+        multicolor: true,
+      }),
+      TextStyle,
+      Color,
       TableKit.configure({
         table: {
           resizable: false,
@@ -1266,10 +1389,13 @@ export function Editor({
         const text = clipboardData.getData("text/plain");
         if (!text) return false;
 
+        // Auto check & format repair for pasted text (aligns tables, fixes headings/lists/fences)
+        const repairedText = repairMarkdownText(text);
+
         // Check if text looks like markdown (has common markdown patterns)
         const markdownPatterns =
           /^#{1,6}\s|^\s*[-*+]\s|^\s*\d+\.\s|^\s*>\s|```|^\s*\[.*\]\(.*\)|^\s*!\[|\*\*.*\*\*|__.*__|~~.*~~|^\s*[-*_]{3,}\s*$|^\|.+\||\$\$[\s\S]+?\$\$/m;
-        if (!markdownPatterns.test(text)) {
+        if (!markdownPatterns.test(repairedText)) {
           // Not markdown, let TipTap handle it normally
           return false;
         }
@@ -1281,7 +1407,7 @@ export function Editor({
         const manager = currentEditor.storage.markdown?.manager;
         if (manager && typeof manager.parse === "function") {
           try {
-            const parsed = manager.parse(text);
+            const parsed = manager.parse(repairedText);
             if (parsed) {
               currentEditor.commands.insertContent(parsed);
               return true;
@@ -1302,8 +1428,10 @@ export function Editor({
       scheduleSave();
     },
     onSelectionUpdate: () => {
-      // Trigger re-render to update toolbar active states
-      setSelectionKey((k) => k + 1);
+      // Trigger re-render to update toolbar active states without flushSync in lifecycle
+      queueMicrotask(() => {
+        setSelectionKey((k) => k + 1);
+      });
     },
     // Prevent flash of unstyled content during initial render
     immediatelyRender: false,
@@ -1340,42 +1468,6 @@ export function Editor({
 
   const { words, chars, readingTime } = getStats();
 
-  // Custom Selection Context Menu Handler
-  const handleEditorContextMenu = useCallback((e: React.MouseEvent) => {
-    if (sourceMode) {
-      const textarea = e.currentTarget.querySelector("textarea") as HTMLTextAreaElement | null;
-      if (textarea) {
-        const start = textarea.selectionStart;
-        const end = textarea.selectionEnd;
-        if (start !== end) {
-          const selectedText = textarea.value.substring(start, end).trim();
-          if (selectedText) {
-            e.preventDefault();
-            setEditorContextMenu({
-              x: e.clientX,
-              y: e.clientY,
-              selectedText,
-            });
-            return;
-          }
-        }
-      }
-    } else if (editor) {
-      const { state } = editor;
-      const { selection } = state;
-      if (!selection.empty) {
-        const selectedText = state.doc.textBetween(selection.from, selection.to, " ").trim();
-        if (selectedText) {
-          e.preventDefault();
-          setEditorContextMenu({
-            x: e.clientX,
-            y: e.clientY,
-            selectedText,
-          });
-        }
-      }
-    }
-  }, [editor, sourceMode]);
 
   // Notify parent component when editor is ready
   useEffect(() => {
@@ -1786,39 +1878,311 @@ export function Editor({
     });
   }, [editor, closeBlockMathPopup]);
 
+  // Auto-save in source mode with debounce
+  const handleSourceChange = useCallback(
+    (value: string) => {
+      setSourceContent(value);
+      if (sourceTimeoutRef.current) {
+        clearTimeout(sourceTimeoutRef.current);
+      }
+      sourceTimeoutRef.current = window.setTimeout(async () => {
+        if (currentNote) {
+          setIsSaving(true);
+          try {
+            lastSaveRef.current = { noteId: currentNote.id, content: value };
+            await saveNote(value, currentNote.id);
+          } catch (error) {
+            console.error("Failed to save note:", error);
+            toast.error("Failed to save note");
+          } finally {
+            setIsSaving(false);
+          }
+        }
+      }, 300);
+    },
+    [currentNote, saveNote],
+  );
+
+  // Automatic list continuation and indentation support for source mode editor
+  const handleSourceKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      const textarea = e.currentTarget;
+      const { selectionStart, selectionEnd, value } = textarea;
+
+      // 1. Tab / Shift+Tab for Indentation / Outdentation
+      if (e.key === "Tab") {
+        e.preventDefault();
+        if (selectionStart !== selectionEnd) {
+          const startLineIdx = value.lastIndexOf("\n", selectionStart - 1) + 1;
+          const endLineIdx = value.indexOf("\n", selectionEnd);
+          const effectiveEndLine = endLineIdx === -1 ? value.length : endLineIdx;
+          const selectedBlock = value.substring(startLineIdx, effectiveEndLine);
+          const lines = selectedBlock.split("\n");
+
+          let newLines: string[];
+          if (e.shiftKey) {
+            newLines = lines.map((l) => l.replace(/^(  |\t)/, ""));
+          } else {
+            newLines = lines.map((l) => `  ${l}`);
+          }
+          const newBlock = newLines.join("\n");
+          const newValue =
+            value.substring(0, startLineIdx) + newBlock + value.substring(effectiveEndLine);
+          handleSourceChange(newValue);
+
+          setTimeout(() => {
+            textarea.selectionStart = startLineIdx;
+            textarea.selectionEnd = startLineIdx + newBlock.length;
+          }, 0);
+        } else {
+          if (e.shiftKey) {
+            const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
+            const lineContent = value.substring(lineStart, selectionStart);
+            if (lineContent.startsWith("  ")) {
+              const newValue = value.substring(0, lineStart) + value.substring(lineStart + 2);
+              handleSourceChange(newValue);
+              setTimeout(() => {
+                textarea.selectionStart = textarea.selectionEnd = Math.max(
+                  lineStart,
+                  selectionStart - 2,
+                );
+              }, 0);
+            } else if (lineContent.startsWith("\t")) {
+              const newValue = value.substring(0, lineStart) + value.substring(lineStart + 1);
+              handleSourceChange(newValue);
+              setTimeout(() => {
+                textarea.selectionStart = textarea.selectionEnd = Math.max(
+                  lineStart,
+                  selectionStart - 1,
+                );
+              }, 0);
+            }
+          } else {
+            const newValue =
+              value.substring(0, selectionStart) + "  " + value.substring(selectionEnd);
+            handleSourceChange(newValue);
+            setTimeout(() => {
+              textarea.selectionStart = textarea.selectionEnd = selectionStart + 2;
+            }, 0);
+          }
+        }
+        return;
+      }
+
+      // 2. Enter key: auto-continue lists (unordered, ordered, tasks, blockquotes) & indentation
+      if (e.key === "Enter" && !e.shiftKey && selectionStart === selectionEnd) {
+        const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
+        const currentLine = value.substring(lineStart, selectionStart);
+
+        // Task list: e.g. "  - [ ] ", "  * [x] "
+        const taskMatch = currentLine.match(/^(\s*)([-*+])\s+\[([ xX])\]\s*(.*)$/);
+        // Ordered list: e.g. "  1. "
+        const orderedMatch = !taskMatch && currentLine.match(/^(\s*)(\d+)\.\s*(.*)$/);
+        // Unordered list or blockquote: e.g. "  - ", "  * ", "  > "
+        const bulletMatch =
+          !taskMatch && !orderedMatch && currentLine.match(/^(\s*)([-*+>]|\d+\.)\s*(.*)$/);
+
+        if (taskMatch) {
+          const [, indent, bullet, , rest] = taskMatch;
+          if (!rest.trim()) {
+            e.preventDefault();
+            const newValue = value.substring(0, lineStart) + value.substring(selectionStart);
+            handleSourceChange(newValue);
+            setTimeout(() => {
+              textarea.selectionStart = textarea.selectionEnd = lineStart;
+            }, 0);
+          } else {
+            e.preventDefault();
+            const prefix = `\n${indent}${bullet} [ ] `;
+            const newValue =
+              value.substring(0, selectionStart) + prefix + value.substring(selectionEnd);
+            handleSourceChange(newValue);
+            setTimeout(() => {
+              textarea.selectionStart = textarea.selectionEnd = selectionStart + prefix.length;
+            }, 0);
+          }
+          return;
+        }
+
+        if (orderedMatch) {
+          const [, indent, numStr, rest] = orderedMatch;
+          if (!rest.trim()) {
+            e.preventDefault();
+            const newValue = value.substring(0, lineStart) + value.substring(selectionStart);
+            handleSourceChange(newValue);
+            setTimeout(() => {
+              textarea.selectionStart = textarea.selectionEnd = lineStart;
+            }, 0);
+          } else {
+            e.preventDefault();
+            const nextNum = parseInt(numStr, 10) + 1;
+            const prefix = `\n${indent}${nextNum}. `;
+            const newValue =
+              value.substring(0, selectionStart) + prefix + value.substring(selectionEnd);
+            handleSourceChange(newValue);
+            setTimeout(() => {
+              textarea.selectionStart = textarea.selectionEnd = selectionStart + prefix.length;
+            }, 0);
+          }
+          return;
+        }
+
+        if (bulletMatch) {
+          const [, indent, marker, rest] = bulletMatch;
+          if (!rest.trim()) {
+            e.preventDefault();
+            const newValue = value.substring(0, lineStart) + value.substring(selectionStart);
+            handleSourceChange(newValue);
+            setTimeout(() => {
+              textarea.selectionStart = textarea.selectionEnd = lineStart;
+            }, 0);
+          } else {
+            e.preventDefault();
+            const prefix = `\n${indent}${marker} `;
+            const newValue =
+              value.substring(0, selectionStart) + prefix + value.substring(selectionEnd);
+            handleSourceChange(newValue);
+            setTimeout(() => {
+              textarea.selectionStart = textarea.selectionEnd = selectionStart + prefix.length;
+            }, 0);
+          }
+          return;
+        }
+
+        // Preserve plain leading whitespace indentation
+        const plainIndentMatch = currentLine.match(/^(\s+)(.*)$/);
+        if (plainIndentMatch && plainIndentMatch[2].trim()) {
+          e.preventDefault();
+          const indent = plainIndentMatch[1];
+          const prefix = `\n${indent}`;
+          const newValue =
+            value.substring(0, selectionStart) + prefix + value.substring(selectionEnd);
+          handleSourceChange(newValue);
+          setTimeout(() => {
+            textarea.selectionStart = textarea.selectionEnd = selectionStart + prefix.length;
+          }, 0);
+          return;
+        }
+      }
+    },
+    [handleSourceChange],
+  );
+
+  // Helper to insert image src into editor or source textarea
+  const insertImageIntoDoc = useCallback((src: string, altText: string = "Image") => {
+    if (sourceMode) {
+      const textarea = document.querySelector("textarea") as HTMLTextAreaElement | null;
+      if (textarea) {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const val = textarea.value;
+        const mdImage = `![${altText}](${src})`;
+        const newVal = val.substring(0, start) + mdImage + val.substring(end);
+        handleSourceChange(newVal);
+        setTimeout(() => {
+          textarea.focus();
+          textarea.setSelectionRange(start + mdImage.length, start + mdImage.length);
+        }, 0);
+      }
+    } else if (editor) {
+      editor.chain().focus().setImage({ src, alt: altText }).run();
+    }
+  }, [editor, sourceMode, handleSourceChange]);
+
+  // Fallback HTML file picker for web preview or when native dialog returns non-image path
+  const handleFallbackFileInput = useCallback(() => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/png,image/jpeg,image/gif,image/webp,image/svg+xml,image/*";
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const result = reader.result as string;
+        if (!result) return;
+
+        let finalSrc = result;
+        const altName = file.name.replace(/\.[^/.]+$/, "");
+
+        try {
+          const base64Data = result.split(",")[1];
+          if (base64Data) {
+            const ext = file.name.split(".").pop() || "png";
+            const relativePath = await invoke<string>("save_clipboard_image", {
+              base64Data,
+              extension: ext,
+            });
+            if (relativePath) {
+              const notesFolder = await invoke<string>("get_notes_folder");
+              const absolutePath = await join(notesFolder, relativePath);
+              finalSrc = convertFileSrc(absolutePath);
+            }
+          }
+        } catch {
+          // If backend save unavailable (web mode), data URL works directly
+        }
+
+        insertImageIntoDoc(finalSrc, altName);
+        toast.success("Image inserted");
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  }, [insertImageIntoDoc]);
+
   // Image handler
   const handleAddImage = useCallback(async () => {
-    if (!editor) return;
-    const selected = await openDialog({
-      multiple: false,
-      filters: [
-        {
-          name: "Images",
-          extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg"],
-        },
-      ],
-    });
-    if (selected) {
-      try {
-        // Copy image to assets folder and get relative path (assets/filename.ext)
-        const relativePath = await invoke<string>("copy_image_to_assets", {
-          sourcePath: selected as string,
-        });
+    if (!editor && !sourceMode) return;
 
-        // Get notes folder and construct absolute path using Tauri's join
-        const notesFolder = await invoke<string>("get_notes_folder");
-        const absolutePath = await join(notesFolder, relativePath);
+    try {
+      const selected = await openDialog({
+        multiple: false,
+        filters: [
+          {
+            name: "Images",
+            extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg"],
+          },
+        ],
+      });
 
-        // Convert to Tauri asset URL
-        const assetUrl = convertFileSrc(absolutePath);
+      if (selected && typeof selected === "string") {
+        const isImageExt = /\.(png|jpe?g|gif|webp|svg)$/i.test(selected);
 
-        // Insert image with asset URL
-        editor.chain().focus().setImage({ src: assetUrl }).run();
-      } catch (error) {
-        console.error("Failed to add image:", error);
+        if (isImageExt) {
+          try {
+            // Copy image to assets folder and get relative path (assets/filename.ext)
+            const relativePath = await invoke<string>("copy_image_to_assets", {
+              sourcePath: selected,
+            });
+
+            // Get notes folder and construct absolute path using Tauri's join
+            const notesFolder = await invoke<string>("get_notes_folder");
+            const absolutePath = await join(notesFolder, relativePath);
+
+            // Convert to Tauri asset URL
+            const assetUrl = convertFileSrc(absolutePath);
+            const fileName = selected.split(/[/\\]/).pop() || "Image";
+
+            insertImageIntoDoc(assetUrl, fileName);
+            toast.success("Image inserted");
+            return;
+          } catch (error) {
+            console.error("Failed to copy image to assets:", error);
+          }
+        }
       }
+
+      // If openDialog returned null/mock path or non-image extension, trigger browser file input fallback
+      if (!selected || typeof selected !== "string" || !/\.(png|jpe?g|gif|webp|svg)$/i.test(selected)) {
+        handleFallbackFileInput();
+      }
+    } catch (error) {
+      console.error("Native dialog error, triggering fallback file picker:", error);
+      handleFallbackFileInput();
     }
-  }, [editor]);
+  }, [editor, sourceMode, insertImageIntoDoc, handleFallbackFileInput]);
 
   // Footnote insertion handler
   const handleAddFootnote = useCallback(async () => {
@@ -1872,6 +2236,113 @@ export function Editor({
       }
     }
   }, [currentNote, footnotesMap, addFootnote, sourceMode, editor]);
+
+  // Insert current date handler
+  const handleInsertCurrentDate = useCallback(() => {
+    const formattedDate = new Date().toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+
+    if (sourceMode) {
+      const textarea = document.querySelector("textarea") as HTMLTextAreaElement | null;
+      if (textarea) {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const val = textarea.value;
+        const newVal = val.substring(0, start) + formattedDate + val.substring(end);
+        handleSourceChange(newVal);
+        setTimeout(() => {
+          textarea.focus();
+          textarea.setSelectionRange(start + formattedDate.length, start + formattedDate.length);
+        }, 0);
+      }
+    } else if (editor) {
+      editor.chain().focus().insertContent(formattedDate).run();
+    }
+  }, [editor, sourceMode, handleSourceChange]);
+
+  // Listen for insert current date events
+  useEffect(() => {
+    const handler = () => handleInsertCurrentDate();
+    window.addEventListener("insert-current-date", handler);
+    return () => window.removeEventListener("insert-current-date", handler);
+  }, [handleInsertCurrentDate]);
+
+  // Toggle Lowercase / Uppercase handler
+  const handleToggleCase = useCallback(() => {
+    if (sourceMode) {
+      const textarea = document.querySelector("textarea") as HTMLTextAreaElement | null;
+      if (textarea) {
+        let start = textarea.selectionStart;
+        let end = textarea.selectionEnd;
+        const val = textarea.value;
+
+        if (start === end) {
+          // Expand selection to word at cursor
+          let wStart = start;
+          let wEnd = start;
+          while (wStart > 0 && /[\w\u00C0-\u024F]/.test(val[wStart - 1])) wStart--;
+          while (wEnd < val.length && /[\w\u00C0-\u024F]/.test(val[wEnd])) wEnd++;
+          if (wStart < wEnd) {
+            start = wStart;
+            end = wEnd;
+          }
+        }
+
+        if (start !== end) {
+          const selectedText = val.substring(start, end);
+          const isUpper = selectedText === selectedText.toUpperCase();
+          const transformed = isUpper ? selectedText.toLowerCase() : selectedText.toUpperCase();
+          const newVal = val.substring(0, start) + transformed + val.substring(end);
+          handleSourceChange(newVal);
+          setTimeout(() => {
+            textarea.focus();
+            textarea.setSelectionRange(start, start + transformed.length);
+          }, 0);
+        }
+      }
+    } else if (editor) {
+      const { from, to } = editor.state.selection;
+      let rangeFrom = from;
+      let rangeTo = to;
+
+      if (from === to) {
+        // Expand selection to word at cursor
+        const $pos = editor.state.doc.resolve(from);
+        const parent = $pos.parent;
+        const parentStart = $pos.start();
+        const offsetInParent = $pos.parentOffset;
+        const parentText = parent.textContent;
+
+        let wStart = offsetInParent;
+        let wEnd = offsetInParent;
+        while (wStart > 0 && /[\w\u00C0-\u024F]/.test(parentText[wStart - 1])) wStart--;
+        while (wEnd < parentText.length && /[\w\u00C0-\u024F]/.test(parentText[wEnd])) wEnd++;
+
+        if (wStart < wEnd) {
+          rangeFrom = parentStart + wStart;
+          rangeTo = parentStart + wEnd;
+        }
+      }
+
+      if (rangeFrom !== rangeTo) {
+        const selectedText = editor.state.doc.textBetween(rangeFrom, rangeTo, " ");
+        if (selectedText) {
+          const isUpper = selectedText === selectedText.toUpperCase();
+          const transformed = isUpper ? selectedText.toLowerCase() : selectedText.toUpperCase();
+          editor.chain().focus().insertContentAt({ from: rangeFrom, to: rangeTo }, transformed).run();
+        }
+      }
+    }
+  }, [editor, sourceMode, handleSourceChange]);
+
+  // Listen for toggle-case custom event
+  useEffect(() => {
+    const handler = () => handleToggleCase();
+    window.addEventListener("toggle-case", handler);
+    return () => window.removeEventListener("toggle-case", handler);
+  }, [handleToggleCase]);
 
   // Keyboard shortcut for Cmd+Alt+F to add footnote
   useEffect(() => {
@@ -2235,30 +2706,322 @@ export function Editor({
     return () => window.removeEventListener("toggle-source-mode", handler);
   }, [toggleSourceMode]);
 
-  // Auto-save in source mode with debounce
-  const handleSourceChange = useCallback(
-    (value: string) => {
-      setSourceContent(value);
-      if (sourceTimeoutRef.current) {
-        clearTimeout(sourceTimeoutRef.current);
+  // Custom Right-Click Context Menu Handler
+  const handleEditorContextMenu = useCallback((e: React.MouseEvent) => {
+    let selectedText = "";
+    let hasSelection = false;
+
+    if (sourceMode) {
+      const textarea = (e.currentTarget.querySelector("textarea") as HTMLTextAreaElement | null) || (e.target as HTMLTextAreaElement);
+      if (textarea && typeof textarea.selectionStart === "number") {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        if (start !== end) {
+          selectedText = textarea.value.substring(start, end).trim();
+          hasSelection = true;
+        }
       }
-      sourceTimeoutRef.current = window.setTimeout(async () => {
-        if (currentNote) {
-          setIsSaving(true);
-          try {
-            lastSaveRef.current = { noteId: currentNote.id, content: value };
-            await saveNote(value, currentNote.id);
-          } catch (error) {
-            console.error("Failed to save note:", error);
-            toast.error("Failed to save note");
-          } finally {
-            setIsSaving(false);
+    } else if (editor) {
+      const { state } = editor;
+      const { selection } = state;
+      if (!selection.empty) {
+        selectedText = state.doc.textBetween(selection.from, selection.to, " ").trim();
+        hasSelection = true;
+      }
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const menuWidth = 230;
+    const menuHeight = 260;
+    const x = Math.min(e.clientX, window.innerWidth - menuWidth - 12);
+    const y = Math.min(e.clientY, window.innerHeight - menuHeight - 12);
+
+    setEditorContextMenu({
+      x: Math.max(12, x),
+      y: Math.max(12, y),
+      selectedText,
+      hasSelection,
+      isHighlighted: !sourceMode && editor ? editor.isActive("highlight") : false,
+    });
+  }, [editor, sourceMode]);
+
+  const handleContextHighlight = useCallback((color?: string) => {
+    if (sourceMode) {
+      const textarea = document.querySelector("textarea") as HTMLTextAreaElement | null;
+      if (!textarea) return;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const val = textarea.value;
+      const highlightColor = color || "#fef08a";
+
+      if (start !== end) {
+        const sel = val.substring(start, end);
+        const wrapped = `<mark style="background-color: ${highlightColor}">${sel}</mark>`;
+        const newVal = val.substring(0, start) + wrapped + val.substring(end);
+        handleSourceChange(newVal);
+      } else {
+        const wrapped = `<mark style="background-color: ${highlightColor}">highlight</mark>`;
+        const newVal = val.substring(0, start) + wrapped + val.substring(start);
+        handleSourceChange(newVal);
+      }
+    } else if (editor) {
+      if (color) {
+        editor.chain().focus().setHighlight({ color }).run();
+      } else {
+        editor.chain().focus().toggleHighlight({ color: "#fef08a" }).run();
+      }
+    }
+  }, [editor, sourceMode, handleSourceChange]);
+
+  const handleContextCopy = useCallback(async (selectedTextParam?: string) => {
+    let textToCopy = selectedTextParam || editorContextMenu?.selectedText || "";
+
+    if (!textToCopy) {
+      if (sourceMode) {
+        textToCopy = sourceContent;
+      } else if (editor) {
+        textToCopy = editor.state.doc.textContent;
+      }
+    }
+
+    if (!textToCopy) {
+      toast.info("Nothing to copy");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      toast.success("Copied to clipboard");
+    } catch (err) {
+      console.error("Failed to copy:", err);
+      toast.error("Failed to copy to clipboard");
+    }
+  }, [editorContextMenu, editor, sourceMode, sourceContent]);
+
+  const handleContextCopyAsHtml = useCallback(
+    async (selectedTextParam?: string) => {
+      let htmlContent = "";
+      let plainText = selectedTextParam || editorContextMenu?.selectedText || "";
+
+      try {
+        if (!sourceMode && editor && editorContextMenu?.hasSelection) {
+          const { state } = editor;
+          const fragment = state.selection.content().content;
+          const tempDiv = document.createElement("div");
+          tempDiv.appendChild(
+            DOMSerializer.fromSchema(state.schema).serializeFragment(fragment)
+          );
+          htmlContent = tempDiv.innerHTML;
+          if (!plainText) {
+            plainText = state.doc.textBetween(
+              state.selection.from,
+              state.selection.to,
+              " "
+            );
           }
         }
-      }, 300);
+
+        if (!htmlContent) {
+          if (plainText) {
+            htmlContent = await marked.parse(plainText);
+          } else {
+            if (!sourceMode && editor) {
+              htmlContent = editor.getHTML();
+              plainText = editor.state.doc.textContent;
+            } else {
+              plainText = sourceContent || currentNote?.content || "";
+              htmlContent = await marked.parse(plainText);
+            }
+          }
+        }
+
+        if (!htmlContent) {
+          toast.info("Nothing to copy");
+          return;
+        }
+
+        try {
+          const blobHtml = new Blob([htmlContent], { type: "text/html" });
+          const blobText = new Blob([plainText || htmlContent], {
+            type: "text/plain",
+          });
+          await navigator.clipboard.write([
+            new ClipboardItem({
+              "text/html": blobHtml,
+              "text/plain": blobText,
+            }),
+          ]);
+        } catch {
+          await navigator.clipboard.writeText(htmlContent);
+        }
+
+        toast.success(
+          editorContextMenu?.hasSelection
+            ? "Copied selection as HTML"
+            : "Copied note as HTML"
+        );
+      } catch (err) {
+        console.error("Failed to copy HTML:", err);
+        toast.error("Failed to copy as HTML");
+      }
     },
-    [currentNote, saveNote],
+    [editorContextMenu, editor, sourceMode, sourceContent, currentNote]
   );
+
+  const handleContextCut = useCallback(async () => {
+    if (!editorContextMenu?.hasSelection) return;
+    const textToCut = editorContextMenu.selectedText;
+
+    try {
+      await navigator.clipboard.writeText(textToCut);
+      if (sourceMode) {
+        const textarea = document.querySelector("textarea") as HTMLTextAreaElement | null;
+        if (textarea) {
+          const start = textarea.selectionStart;
+          const end = textarea.selectionEnd;
+          const val = textarea.value;
+          const newVal = val.substring(0, start) + val.substring(end);
+          handleSourceChange(newVal);
+        }
+      } else if (editor) {
+        editor.chain().focus().deleteSelection().run();
+      }
+      toast.success("Cut to clipboard");
+    } catch (err) {
+      console.error("Failed to cut:", err);
+      toast.error("Failed to cut");
+    }
+  }, [editorContextMenu, editor, sourceMode, handleSourceChange]);
+
+  const handleContextPaste = useCallback(async () => {
+    try {
+      const pastedText = await navigator.clipboard.readText();
+      if (!pastedText) {
+        toast.info("Clipboard is empty");
+        return;
+      }
+
+      const repairedPastedText = repairMarkdownText(pastedText);
+
+      if (sourceMode) {
+        const textarea = document.querySelector("textarea") as HTMLTextAreaElement | null;
+        if (textarea) {
+          const start = textarea.selectionStart;
+          const end = textarea.selectionEnd;
+          const val = textarea.value;
+          const newVal = val.substring(0, start) + repairedPastedText + val.substring(end);
+          handleSourceChange(newVal);
+        }
+      } else if (editor) {
+        editor.chain().focus().insertContent(repairedPastedText).run();
+      }
+      toast.success("Pasted");
+    } catch (err) {
+      console.error("Failed to paste:", err);
+      toast.error("Unable to access clipboard. Use shortcut Ctrl+V / Cmd+V");
+    }
+  }, [editor, sourceMode, handleSourceChange]);
+
+  const handleContextFormatTable = useCallback(() => {
+    try {
+      if (sourceMode) {
+        if (editorContextMenu?.hasSelection && editorContextMenu.selectedText) {
+          const textarea = document.querySelector("textarea") as HTMLTextAreaElement | null;
+          if (textarea) {
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            const val = textarea.value;
+            const sel = val.substring(start, end);
+            const formatted = formatMarkdownTable(sel);
+            const newVal = val.substring(0, start) + formatted + val.substring(end);
+            handleSourceChange(newVal);
+            toast.success("Table formatted & aligned");
+            return;
+          }
+        }
+        const formatted = formatAllTablesInMarkdown(sourceContent);
+        handleSourceChange(formatted);
+        toast.success("All tables formatted & aligned");
+      } else if (editor) {
+        const manager = editor.storage.markdown?.manager;
+        const currentMd = manager
+          ? manager.serialize(editor.getJSON())
+          : editor.getText();
+        const formatted = formatAllTablesInMarkdown(currentMd);
+        if (manager && typeof manager.parse === "function") {
+          try {
+            const parsed = manager.parse(formatted);
+            editor.commands.setContent(parsed);
+          } catch {
+            editor.commands.setContent(formatted);
+          }
+        } else {
+          editor.commands.setContent(formatted);
+        }
+        toast.success("Table formatted & aligned");
+      }
+    } catch (err) {
+      console.error("Failed to format table:", err);
+      toast.error("Failed to format table");
+    }
+  }, [editor, sourceMode, sourceContent, editorContextMenu, handleSourceChange]);
+
+  const handleContextRepairFormat = useCallback(() => {
+    try {
+      if (sourceMode) {
+        const repaired = repairMarkdownText(sourceContent);
+        handleSourceChange(repaired);
+        toast.success("Note formatting checked & repaired");
+      } else if (editor) {
+        const manager = editor.storage.markdown?.manager;
+        const currentMd = manager
+          ? manager.serialize(editor.getJSON())
+          : editor.getText();
+        const repaired = repairMarkdownText(currentMd);
+        if (manager && typeof manager.parse === "function") {
+          try {
+            const parsed = manager.parse(repaired);
+            editor.commands.setContent(parsed);
+          } catch {
+            editor.commands.setContent(repaired);
+          }
+        } else {
+          editor.commands.setContent(repaired);
+        }
+        toast.success("Note formatting checked & repaired");
+      }
+    } catch (err) {
+      console.error("Failed to repair format:", err);
+      toast.error("Failed to repair format");
+    }
+  }, [editor, sourceMode, sourceContent, handleSourceChange]);
+
+  useEffect(() => {
+    const onFormatTable = () => handleContextFormatTable();
+    const onRepairFormat = () => handleContextRepairFormat();
+
+    window.addEventListener("editor:format-table", onFormatTable);
+    window.addEventListener("editor:repair-format", onRepairFormat);
+
+    return () => {
+      window.removeEventListener("editor:format-table", onFormatTable);
+      window.removeEventListener("editor:repair-format", onRepairFormat);
+    };
+  }, [handleContextFormatTable, handleContextRepairFormat]);
+
+  const handleContextSelectAll = useCallback(() => {
+    if (sourceMode) {
+      const textarea = document.querySelector("textarea") as HTMLTextAreaElement | null;
+      if (textarea) {
+        textarea.focus();
+        textarea.select();
+      }
+    } else if (editor) {
+      editor.chain().focus().selectAll().run();
+    }
+  }, [editor, sourceMode]);
 
   if (!currentNote) {
     // Preview mode: show loading state (content not yet loaded)
@@ -2389,15 +3152,24 @@ export function Editor({
               </button>
             </Tooltip>
           ) : isSaving ? (
-            <Tooltip content="Saving...">
-              <div className="h-7 w-7 flex items-center justify-center">
-                <SpinnerIcon className="w-4.5 h-4.5 text-text-muted/40 stroke-[1.5] animate-spin" />
+            <Tooltip content="Saving changes to disk...">
+              <div className="h-6.5 px-2 flex items-center gap-1.5 text-[11px] text-text-muted/80 bg-bg-muted/50 rounded-md border border-border/50 select-none">
+                <SpinnerIcon className="w-3.5 h-3.5 animate-spin text-text-muted" />
+                <span className="font-medium">Saving...</span>
+              </div>
+            </Tooltip>
+          ) : isUnsaved ? (
+            <Tooltip content="Unsaved changes">
+              <div className="h-6.5 px-2 flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400 bg-amber-500/10 rounded-md border border-amber-500/30 select-none">
+                <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                <span className="font-medium">Unsaved changes</span>
               </div>
             </Tooltip>
           ) : (
-            <Tooltip content="All changes saved">
-              <div className="h-7 w-7 flex items-center justify-center rounded-full">
-                <CircleCheckIcon className="w-4.5 h-4.5 mt-px stroke-[1.5] text-text-muted/40" />
+            <Tooltip content="All changes saved to disk">
+              <div className="h-6.5 px-2 flex items-center gap-1.5 text-[11px] text-text-muted/70 bg-bg-muted/30 rounded-md border border-border/30 select-none">
+                <CircleCheckIcon className="w-3.5 h-3.5 text-emerald-500/80 stroke-[2]" />
+                <span className="font-medium">Saved</span>
               </div>
             </Tooltip>
           )}
@@ -2554,6 +3326,7 @@ export function Editor({
           onAddBlockMath={handleAddBlockMath}
           onAddImage={handleAddImage}
           onAddFootnote={handleAddFootnote}
+          onToggleCase={handleToggleCase}
         />
       </div>
 
@@ -2574,6 +3347,7 @@ export function Editor({
               <textarea
                 value={sourceContent}
                 onChange={(e) => handleSourceChange(e.target.value)}
+                onKeyDown={handleSourceKeyDown}
                 wrap="off"
                 dir={textDirection}
                 className="w-full h-full bg-transparent text-text focus:outline-none resize-none px-6 pt-8 pb-24 mx-auto block"
@@ -2623,7 +3397,7 @@ export function Editor({
                 onContextMenu={async (e) => {
                   if (!editor) return;
 
-                  // If we have highlighted text, show our custom selection context menu and keep selection
+                  // If we have highlighted text, show our custom selection context menu
                   const { selection } = editor.state;
                   if (!selection.empty) {
                     handleEditorContextMenu(e);
@@ -2636,13 +3410,16 @@ export function Editor({
                     top: e.clientY,
                   });
 
-                  if (!clickPos) return;
+                  if (clickPos) {
+                    // Set selection to clicked pos
+                    editor.chain().focus().setTextSelection(clickPos.pos).run();
+                  }
 
-                  // Set the selection to the clicked position
-                  editor.chain().focus().setTextSelection(clickPos.pos).run();
-
-                  // Check if we're in a table after updating selection
-                  if (!editor.isActive("table")) return;
+                  // If in a table and empty selection, open table context menu
+                  if (!editor.isActive("table")) {
+                    handleEditorContextMenu(e);
+                    return;
+                  }
 
                   e.preventDefault();
 
@@ -2835,7 +3612,7 @@ export function Editor({
         </div>
       </div>
 
-      {/* Custom Selection Context Menu */}
+      {/* Custom Right-Click Context Menu */}
       {editorContextMenu && (
         <>
           {/* Invisible click-away backdrop */}
@@ -2853,21 +3630,268 @@ export function Editor({
               top: editorContextMenu.y,
               left: editorContextMenu.x,
             }}
-            className="z-50 min-w-48 bg-bg border border-border rounded-lg shadow-xl py-1 animate-scale-in text-xs text-text font-sans"
+            className="z-50 min-w-56 bg-bg border border-border/80 rounded-xl shadow-2xl py-1.5 animate-scale-in text-xs text-text font-sans divide-y divide-border/40 select-none"
           >
-            <button
-              onClick={() => {
-                if (currentNote && notesCtx) {
-                  const quote = `> ${editorContextMenu.selectedText}\n\n`;
-                  notesCtx.setActiveCommentsNoteId(currentNote.id, quote);
-                }
-                setEditorContextMenu(null);
-              }}
-              className="w-full text-left px-3 py-1.5 hover:bg-bg-muted focus:bg-bg-muted flex items-center gap-2 cursor-pointer transition-colors font-medium text-text"
-            >
-              <MessageSquareIcon className="w-4 h-4 text-text-muted" />
-              <span>Comment on Highlight...</span>
-            </button>
+            {/* Highlight Section */}
+            <div className="py-1">
+              <button
+                onClick={() => {
+                  handleContextHighlight();
+                  setEditorContextMenu(null);
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-bg-muted focus:bg-bg-muted flex items-center justify-between cursor-pointer transition-colors font-medium text-text"
+              >
+                <div className="flex items-center gap-2">
+                  <HighlighterIcon className="w-4 h-4 text-amber-500 fill-amber-500/20" />
+                  <span>
+                    {editorContextMenu.isHighlighted
+                      ? "Remove Highlight"
+                      : "Highlight"}
+                  </span>
+                </div>
+                <span className="text-[10px] text-text-muted font-mono">
+                  {mod}+Shift+H
+                </span>
+              </button>
+
+              {/* Color Presets */}
+              <div className="px-3 pt-1.5 pb-1 flex items-center justify-between">
+                <span className="text-[10px] text-text-muted font-medium">
+                  Highlights:
+                </span>
+                <div className="flex items-center gap-1.5">
+                  {[
+                    { name: "Yellow", color: "#fef08a", bg: "bg-yellow-300" },
+                    { name: "Green", color: "#bbf7d0", bg: "bg-emerald-300" },
+                    { name: "Blue", color: "#bfdbfe", bg: "bg-sky-300" },
+                    { name: "Pink", color: "#fbcfe8", bg: "bg-pink-300" },
+                    { name: "Orange", color: "#fed7aa", bg: "bg-orange-300" },
+                  ].map((preset) => (
+                    <button
+                      key={preset.name}
+                      title={`Highlight ${preset.name}`}
+                      onClick={() => {
+                        handleContextHighlight(preset.color);
+                        setEditorContextMenu(null);
+                      }}
+                      className={`w-4 h-4 rounded-full ${preset.bg} hover:scale-125 transition-transform border border-black/10 dark:border-white/20 cursor-pointer shadow-xs`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Font Color Presets */}
+              <div className="px-3 pt-1.5 pb-1 flex items-center justify-between border-t border-border/30 mt-1">
+                <span className="text-[10px] text-text-muted font-medium flex items-center gap-1">
+                  <FontColorIcon className="w-3 h-3 text-text-muted" />
+                  Text Color:
+                </span>
+                <div className="flex items-center gap-1.5">
+                  {[
+                    { name: "Default", color: "" },
+                    { name: "Red", color: "#ef4444" },
+                    { name: "Orange", color: "#f97316" },
+                    { name: "Green", color: "#10b981" },
+                    { name: "Blue", color: "#3b82f6" },
+                    { name: "Purple", color: "#a855f7" },
+                  ].map((preset) => (
+                    <button
+                      key={preset.name}
+                      title={`Text Color: ${preset.name}`}
+                      onClick={() => {
+                        const ed = editorRef.current;
+                        if (ed) {
+                          if (preset.color) {
+                            ed.chain().focus().setColor(preset.color).run();
+                          } else {
+                            ed.chain().focus().unsetColor().run();
+                          }
+                        }
+                        setEditorContextMenu(null);
+                      }}
+                      className="w-3.5 h-3.5 rounded-full hover:scale-125 transition-transform border border-black/10 dark:border-white/20 cursor-pointer shadow-xs relative flex items-center justify-center"
+                      style={{ backgroundColor: preset.color || "transparent" }}
+                    >
+                      {!preset.color && (
+                        <div className="w-2.5 h-0.5 bg-red-500 rotate-45" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Format Tools Section */}
+            <div className="py-1 border-b border-border/50">
+              <button
+                onClick={() => {
+                  handleToggleCase();
+                  setEditorContextMenu(null);
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-bg-muted focus:bg-bg-muted flex items-center justify-between cursor-pointer transition-colors font-medium text-text"
+              >
+                <div className="flex items-center gap-2">
+                  <LetterCaseIcon className="w-4 h-4 text-text-muted" />
+                  <span>Toggle Lowercase / Uppercase</span>
+                </div>
+              </button>
+
+              <button
+                onClick={() => {
+                  handleInsertCurrentDate();
+                  setEditorContextMenu(null);
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-bg-muted focus:bg-bg-muted flex items-center justify-between cursor-pointer transition-colors font-medium text-text"
+              >
+                <div className="flex items-center gap-2">
+                  <CalendarIcon className="w-4 h-4 text-text-muted" />
+                  <span>Insert Current Date</span>
+                </div>
+              </button>
+
+              <button
+                onClick={() => {
+                  handleAddImage();
+                  setEditorContextMenu(null);
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-bg-muted focus:bg-bg-muted flex items-center justify-between cursor-pointer transition-colors font-medium text-text"
+              >
+                <div className="flex items-center gap-2">
+                  <ImageIcon className="w-4 h-4 text-text-muted" />
+                  <span>Insert Image</span>
+                </div>
+              </button>
+
+              <button
+                onClick={() => {
+                  handleContextFormatTable();
+                  setEditorContextMenu(null);
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-bg-muted focus:bg-bg-muted flex items-center justify-between cursor-pointer transition-colors font-medium text-text"
+              >
+                <div className="flex items-center gap-2">
+                  <TableIcon className="w-4 h-4 text-text-muted" />
+                  <span>Format Table</span>
+                </div>
+              </button>
+
+              <button
+                onClick={() => {
+                  handleContextRepairFormat();
+                  setEditorContextMenu(null);
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-bg-muted focus:bg-bg-muted flex items-center justify-between cursor-pointer transition-colors font-medium text-text"
+              >
+                <div className="flex items-center gap-2">
+                  <CircleCheckIcon className="w-4 h-4 text-emerald-500" />
+                  <span>Format & Auto-Repair Note</span>
+                </div>
+              </button>
+            </div>
+
+            {/* Cut / Copy / Paste Section */}
+            <div className="py-1">
+              <button
+                onClick={() => {
+                  handleContextCut();
+                  setEditorContextMenu(null);
+                }}
+                disabled={!editorContextMenu.hasSelection}
+                className={cn(
+                  "w-full text-left px-3 py-1.5 flex items-center justify-between font-medium transition-colors",
+                  editorContextMenu.hasSelection
+                    ? "hover:bg-bg-muted focus:bg-bg-muted cursor-pointer text-text"
+                    : "opacity-40 cursor-not-allowed text-text-muted"
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <ScissorsIcon className="w-4 h-4 text-text-muted" />
+                  <span>Cut</span>
+                </div>
+                <span className="text-[10px] text-text-muted font-mono">
+                  {mod}+X
+                </span>
+              </button>
+
+              <button
+                onClick={() => {
+                  handleContextCopy();
+                  setEditorContextMenu(null);
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-bg-muted focus:bg-bg-muted flex items-center justify-between cursor-pointer transition-colors font-medium text-text"
+              >
+                <div className="flex items-center gap-2">
+                  <CopyIcon className="w-4 h-4 text-text-muted" />
+                  <span>Copy</span>
+                </div>
+                <span className="text-[10px] text-text-muted font-mono">
+                  {mod}+C
+                </span>
+              </button>
+
+              <button
+                onClick={() => {
+                  handleContextCopyAsHtml();
+                  setEditorContextMenu(null);
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-bg-muted focus:bg-bg-muted flex items-center justify-between cursor-pointer transition-colors font-medium text-text"
+              >
+                <div className="flex items-center gap-2">
+                  <CodeIcon className="w-4 h-4 text-text-muted" />
+                  <span>
+                    {editorContextMenu.hasSelection
+                      ? "Copy Selection as HTML"
+                      : "Copy as HTML"}
+                  </span>
+                </div>
+              </button>
+
+              <button
+                onClick={() => {
+                  handleContextPaste();
+                  setEditorContextMenu(null);
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-bg-muted focus:bg-bg-muted flex items-center justify-between cursor-pointer transition-colors font-medium text-text"
+              >
+                <div className="flex items-center gap-2">
+                  <PasteIcon className="w-4 h-4 text-text-muted" />
+                  <span>Paste</span>
+                </div>
+                <span className="text-[10px] text-text-muted font-mono">
+                  {mod}+V
+                </span>
+              </button>
+            </div>
+
+            {/* Select All & Comment Section */}
+            <div className="py-1">
+              <button
+                onClick={() => {
+                  handleContextSelectAll();
+                  setEditorContextMenu(null);
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-bg-muted focus:bg-bg-muted flex items-center justify-between cursor-pointer transition-colors font-medium text-text"
+              >
+                <span>Select All</span>
+                <span className="text-[10px] text-text-muted font-mono">
+                  {mod}+A
+                </span>
+              </button>
+
+              {editorContextMenu.hasSelection && currentNote && notesCtx && (
+                <button
+                  onClick={() => {
+                    const quote = `> ${editorContextMenu.selectedText}\n\n`;
+                    notesCtx.setActiveCommentsNoteId(currentNote.id, quote);
+                    setEditorContextMenu(null);
+                  }}
+                  className="w-full text-left px-3 py-1.5 hover:bg-bg-muted focus:bg-bg-muted flex items-center gap-2 cursor-pointer transition-colors font-medium text-text"
+                >
+                  <MessageSquareIcon className="w-4 h-4 text-text-muted" />
+                  <span>Comment on Highlight...</span>
+                </button>
+              )}
+            </div>
           </div>
         </>
       )}

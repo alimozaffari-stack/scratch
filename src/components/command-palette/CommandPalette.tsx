@@ -47,9 +47,18 @@ import {
   CodexIcon,
   OpenCodeIcon,
   OllamaIcon,
+  LMStudioIcon,
+  AntigravityIcon,
   FolderIcon,
   FolderPlusIcon,
   KeyboardIcon,
+  ListIcon,
+  TableIcon,
+  CircleCheckIcon,
+  ImageIcon,
+  ArchiveIcon,
+  CalendarIcon,
+  LetterCaseIcon,
 } from "../icons";
 import { mod, shift } from "../../lib/platform";
 import type { AiProvider } from "../../services/ai";
@@ -93,6 +102,8 @@ export function CommandPalette({
     pinNote,
     unpinNote,
     notesFolder,
+    createFolder,
+    moveNote,
   } = useNotes();
   const { setTheme } = useTheme();
   const { status, gitAvailable, gitEnabled, commit, sync, isSyncing } = useGit();
@@ -208,6 +219,24 @@ export function CommandPalette({
               };
             }
 
+            if (provider === "lmstudio") {
+              return {
+                id: "ai-edit-lmstudio",
+                label: "Edit with LM Studio",
+                icon: <LMStudioIcon className="w-4.5 h-4.5 text-text-muted" />,
+                action,
+              };
+            }
+
+            if (provider === "antigravity") {
+              return {
+                id: "ai-edit-antigravity",
+                label: "Edit with Antigravity",
+                icon: <AntigravityIcon className="w-4.5 h-4.5 text-text-muted" />,
+                action,
+              };
+            }
+
             return {
               id: "ai-edit-claude",
               label: "Edit with Claude Code",
@@ -249,6 +278,22 @@ export function CommandPalette({
               onClose();
             } catch (error) {
               console.error("Failed to duplicate note:", error);
+            }
+          },
+        },
+        {
+          id: "archive-note",
+          label: "Archive Current Note",
+          icon: <ArchiveIcon className="w-4.5 h-4.5 stroke-[1.5]" />,
+          action: async () => {
+            try {
+              await createFolder("", "Archive");
+              await moveNote(currentNote.id, "Archive");
+              toast.success(`Archived "${currentNote.title || "Note"}"`);
+              onClose();
+            } catch (error) {
+              console.error("Failed to archive note:", error);
+              toast.error("Failed to archive note");
             }
           },
         },
@@ -313,6 +358,24 @@ export function CommandPalette({
           },
         },
         {
+          id: "export-pdf",
+          label: "Export to PDF",
+          icon: <DownloadIcon className="w-4.5 h-4.5 stroke-[1.5]" />,
+          action: async () => {
+            try {
+              if (!editorRef?.current || !currentNote) {
+                toast.error("Editor not available");
+                return;
+              }
+              await downloadPdf(editorRef.current, currentNote.title);
+              onClose();
+            } catch (error) {
+              console.error("Failed to open PDF export dialog:", error);
+              toast.error("Failed to export PDF");
+            }
+          },
+        },
+        {
           id: "download-pdf",
           label: "Print as PDF",
           icon: <DownloadIcon className="w-4.5 h-4.5 stroke-[1.5]" />,
@@ -323,13 +386,65 @@ export function CommandPalette({
                 return;
               }
               await downloadPdf(editorRef.current, currentNote.title);
-              // Note: window.print() opens the print dialog but doesn't wait for user action
-              // No success toast needed - the print dialog provides its own feedback
               onClose();
             } catch (error) {
               console.error("Failed to open print dialog:", error);
               toast.error("Failed to open print dialog");
             }
+          },
+        },
+        {
+          id: "toggle-toc",
+          label: "Toggle Table of Contents / Outline",
+          icon: <ListIcon className="w-4.5 h-4.5 stroke-[1.5]" />,
+          action: () => {
+            window.dispatchEvent(new CustomEvent("editor:toggle-toc"));
+            onClose();
+          },
+        },
+        {
+          id: "toggle-case",
+          label: "Toggle Lowercase / Uppercase (Selection)",
+          icon: <LetterCaseIcon className="w-4.5 h-4.5 stroke-[1.5]" />,
+          action: () => {
+            window.dispatchEvent(new CustomEvent("toggle-case"));
+            onClose();
+          },
+        },
+        {
+          id: "insert-date",
+          label: "Insert Current Date",
+          icon: <CalendarIcon className="w-4.5 h-4.5 stroke-[1.5]" />,
+          action: () => {
+            window.dispatchEvent(new CustomEvent("insert-current-date"));
+            onClose();
+          },
+        },
+        {
+          id: "insert-image",
+          label: "Insert Local Image",
+          icon: <ImageIcon className="w-4.5 h-4.5 stroke-[1.5]" />,
+          action: () => {
+            window.dispatchEvent(new CustomEvent("slash-command-image"));
+            onClose();
+          },
+        },
+        {
+          id: "format-table",
+          label: "Format Table (Align Markdown Table)",
+          icon: <TableIcon className="w-4.5 h-4.5 stroke-[1.5]" />,
+          action: () => {
+            window.dispatchEvent(new CustomEvent("editor:format-table"));
+            onClose();
+          },
+        },
+        {
+          id: "repair-format",
+          label: "Format & Repair Note (Auto-Repair Syntax)",
+          icon: <CircleCheckIcon className="w-4.5 h-4.5 stroke-[1.5]" />,
+          action: () => {
+            window.dispatchEvent(new CustomEvent("editor:repair-format"));
+            onClose();
           },
         },
         {

@@ -9,6 +9,8 @@ import {
   CodexIcon,
   OpenCodeIcon,
   OllamaIcon,
+  LMStudioIcon,
+  AntigravityIcon,
 } from "../icons";
 import { AI_PROVIDER_ORDER, type AiProvider } from "../../services/ai";
 import * as aiService from "../../services/ai";
@@ -91,6 +93,16 @@ const AI_PROVIDER_INFO: Record<
     name: "Ollama",
     icon: OllamaIcon,
     installUrl: "https://ollama.com",
+  },
+  lmstudio: {
+    name: "LM Studio",
+    icon: LMStudioIcon,
+    installUrl: "https://lmstudio.ai",
+  },
+  antigravity: {
+    name: "Antigravity",
+    icon: AntigravityIcon,
+    installUrl: "https://antigravity.google",
   },
 };
 

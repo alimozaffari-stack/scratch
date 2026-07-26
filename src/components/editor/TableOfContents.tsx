@@ -46,9 +46,9 @@ export function TableOfContents({
     });
   }, []);
 
-  // Listen for focus footnote event from editor interaction
+  // Listen for focus footnote or toggle toc event from editor / command palette interaction
   useEffect(() => {
-    const handler = (e: Event) => {
+    const handleFootnote = (e: Event) => {
       const customEvent = e as CustomEvent<{ label: string }>;
       const label = customEvent.detail?.label;
       if (label) {
@@ -66,8 +66,21 @@ export function TableOfContents({
         }, 150);
       }
     };
-    window.addEventListener("editor:focus-footnote", handler);
-    return () => window.removeEventListener("editor:focus-footnote", handler);
+
+    const handleToggleToc = () => {
+      setIsExpanded((prev) => {
+        const next = !prev;
+        localStorage.setItem("scratch:tocExpanded", String(next));
+        return next;
+      });
+    };
+
+    window.addEventListener("editor:focus-footnote", handleFootnote);
+    window.addEventListener("editor:toggle-toc", handleToggleToc);
+    return () => {
+      window.removeEventListener("editor:focus-footnote", handleFootnote);
+      window.removeEventListener("editor:toggle-toc", handleToggleToc);
+    };
   }, []);
 
   // Sync headings from Editor or SourceContent
@@ -106,7 +119,9 @@ export function TableOfContents({
             });
           }
         });
-        setHeadings(parsedHeadings);
+        queueMicrotask(() => {
+          setHeadings(parsedHeadings);
+        });
       };
 
       extractHeadings();

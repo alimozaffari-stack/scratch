@@ -6,6 +6,8 @@ import {
   CodexIcon,
   OpenCodeIcon,
   OllamaIcon,
+  LMStudioIcon,
+  AntigravityIcon,
 } from "../icons";
 import * as aiService from "../../services/ai";
 import type { AiProvider } from "../../services/ai";
@@ -15,7 +17,7 @@ interface AiEditModalProps {
   open: boolean;
   provider: AiProvider;
   onBack: () => void; // Go back to command palette
-  onExecute: (prompt: string, ollamaModel?: string) => Promise<void>;
+  onExecute: (prompt: string, model?: string) => Promise<void>;
   isExecuting: boolean;
 }
 
@@ -28,11 +30,10 @@ export function AiEditModal({
 }: AiEditModalProps) {
   const [prompt, setPrompt] = useState("");
   const [cliInstalled, setCliInstalled] = useState<boolean | null>(null);
-  const [ollamaModel, setOllamaModel] = useState<string>(
-    "qwen3:8b",
-  );
+  const [modelName, setModelName] = useState<string>("qwen3:8b");
   const inputRef = useRef<HTMLInputElement>(null);
   const modelInputRef = useRef<HTMLInputElement>(null);
+
   const ProviderIcon =
     provider === "codex"
       ? CodexIcon
@@ -40,7 +41,12 @@ export function AiEditModal({
         ? OpenCodeIcon
       : provider === "ollama"
         ? OllamaIcon
+      : provider === "lmstudio"
+        ? LMStudioIcon
+      : provider === "antigravity"
+        ? AntigravityIcon
         : ClaudeIcon;
+
   const providerName =
     provider === "codex"
       ? "Codex"
@@ -48,7 +54,12 @@ export function AiEditModal({
         ? "OpenCode"
       : provider === "ollama"
         ? "Ollama"
+      : provider === "lmstudio"
+        ? "LM Studio"
+      : provider === "antigravity"
+        ? "Antigravity"
         : "Claude";
+
   const cliName =
     provider === "codex"
       ? "OpenAI Codex CLI"
@@ -56,7 +67,12 @@ export function AiEditModal({
         ? "OpenCode CLI"
       : provider === "ollama"
         ? "Ollama CLI"
+      : provider === "lmstudio"
+        ? "LM Studio CLI (lms)"
+      : provider === "antigravity"
+        ? "Antigravity CLI"
         : "Claude Code CLI";
+
   const installUrl =
     provider === "codex"
       ? "https://github.com/openai/codex"
@@ -64,6 +80,10 @@ export function AiEditModal({
         ? "https://opencode.ai"
       : provider === "ollama"
         ? "https://ollama.com"
+      : provider === "lmstudio"
+        ? "https://lmstudio.ai"
+      : provider === "antigravity"
+        ? "https://antigravity.google"
         : "https://code.claude.com/docs/en/quickstart";
 
   // Focus input when opened or when execution finishes
@@ -84,6 +104,10 @@ export function AiEditModal({
           ? aiService.checkOpenCodeCli
         : provider === "ollama"
           ? aiService.checkOllamaCli
+        : provider === "lmstudio"
+          ? aiService.checkLMStudioCli
+        : provider === "antigravity"
+          ? aiService.checkAntigravityCli
           : aiService.checkClaudeCli;
 
     checkCli()
@@ -99,14 +123,20 @@ export function AiEditModal({
     };
   }, [open, provider, cliName]);
 
-  // Load Ollama model from settings when modal opens
+  // Load model setting when modal opens
   useEffect(() => {
-    if (!open || provider !== "ollama") return;
-    invoke<Settings>("get_settings")
-      .then((settings) =>
-        setOllamaModel(settings.ollamaModel || "qwen3:8b"),
-      )
-      .catch(() => {});
+    if (!open) return;
+    if (provider === "ollama") {
+      invoke<Settings>("get_settings")
+        .then((settings) =>
+          setModelName(settings.ollamaModel || "qwen3:8b"),
+        )
+        .catch(() => {});
+    } else if (provider === "lmstudio") {
+      setModelName("");
+    } else if (provider === "antigravity") {
+      setModelName("gemini-2.5-pro");
+    }
   }, [open, provider]);
 
   // Clear prompt when modal closes
@@ -135,12 +165,12 @@ export function AiEditModal({
   const handleExecute = async () => {
     if (!prompt.trim() || isExecuting || !cliInstalled) return;
 
-    // Save the model to settings in the background for next time
-    if (provider === "ollama" && ollamaModel.trim()) {
+    // Save the model to settings in the background for next time if Ollama
+    if (provider === "ollama" && modelName.trim()) {
       invoke<Settings>("get_settings")
         .then((settings) =>
           invoke("update_settings", {
-            newSettings: { ...settings, ollamaModel: ollamaModel.trim() },
+            newSettings: { ...settings, ollamaModel: modelName.trim() },
           }),
         )
         .catch(() => {});
@@ -148,7 +178,9 @@ export function AiEditModal({
 
     await onExecute(
       prompt,
-      provider === "ollama" ? ollamaModel.trim() : undefined,
+      ["ollama", "lmstudio", "antigravity"].includes(provider)
+        ? modelName.trim()
+        : undefined,
     );
   };
 
@@ -236,19 +268,31 @@ export function AiEditModal({
             </div>
           ) : (
             <>
-              {provider === "ollama" && (
+              {(provider === "ollama" ||
+                provider === "lmstudio" ||
+                provider === "antigravity") && (
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2 text-sm">
                     <span className="text-text-muted shrink-0">
-                      Ollama model:
+                      {provider === "ollama"
+                        ? "Ollama model:"
+                        : provider === "lmstudio"
+                          ? "LM Studio model (optional):"
+                          : "Antigravity model (optional):"}
                     </span>
                     <input
                       ref={modelInputRef}
                       type="text"
-                      value={ollamaModel}
-                      onChange={(e) => setOllamaModel(e.target.value)}
+                      value={modelName}
+                      onChange={(e) => setModelName(e.target.value)}
                       onKeyDown={handleKeyDown}
-                      placeholder="qwen3:8b"
+                      placeholder={
+                        provider === "ollama"
+                          ? "qwen3:8b"
+                          : provider === "lmstudio"
+                            ? "e.g. llama-3.2-3b"
+                            : "gemini-2.5-pro"
+                      }
                       autoComplete="off"
                       autoCorrect="off"
                       autoCapitalize="off"

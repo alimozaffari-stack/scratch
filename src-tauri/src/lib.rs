@@ -3344,13 +3344,173 @@ async fn ai_execute_opencode(
 }
 
 #[tauri::command]
-async fn ai_check_ollama_cli() -> Result<bool, String> {
+async fn ai_check_lmstudio_cli() -> Result<bool, String> {
     tauri::async_runtime::spawn_blocking(|| {
         let path = get_expanded_path();
-        check_cli_exists("ollama", &path)
+        check_cli_exists("lms", &path) || check_cli_exists("lmstudio", &path)
     })
     .await
-    .map_err(|e| format!("Failed to check Ollama CLI: {}", e))?
+    .map_err(|e| format!("Failed to check LM Studio CLI: {}", e))?
+}
+
+#[tauri::command]
+async fn ai_execute_lmstudio(
+    file_path: String,
+    prompt: String,
+    model: String,
+    state: State<'_, AppState>,
+) -> Result<AiExecutionResult, String> {
+    let folder = {
+        let app_config = state.app_config.read().expect("app_config read lock");
+        app_config.notes_folder.clone().ok_or("Notes folder not set")?
+    };
+    let path = PathBuf::from(&file_path);
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    if !ext.eq_ignore_ascii_case("md") && !ext.eq_ignore_ascii_case("markdown") {
+        return Err("AI editing is only supported for markdown files".to_string());
+    }
+    let canonical = path
+        .canonicalize()
+        .map_err(|_| "Invalid file path".to_string())?;
+    let notes_root = PathBuf::from(&folder)
+        .canonicalize()
+        .map_err(|_| "Invalid notes folder".to_string())?;
+    if !canonical.starts_with(&notes_root) {
+        return Err("File must be within notes folder".to_string());
+    }
+
+    let file_content = tokio::fs::read_to_string(&canonical)
+        .await
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    let stdin_input = format!(
+        "You are a markdown editor. Edit the markdown content below according to the user's instructions.\n\
+         Return ONLY the complete edited markdown content.\n\
+         Do NOT include any explanation, commentary, or code fences around the output.\n\n\
+         Current markdown content:\n{file_content}\n\n\
+         User instructions:\n{prompt}"
+    );
+
+    let lms_cmd = {
+        let path = get_expanded_path();
+        if check_cli_exists("lms", &path).unwrap_or(false) {
+            "lms".to_string()
+        } else {
+            "lmstudio".to_string()
+        }
+    };
+
+    let model_arg = model.trim().to_string();
+    let mut args = vec!["run".to_string()];
+    if !model_arg.is_empty() {
+        args.push(model_arg);
+    }
+
+    let result = execute_ai_cli(
+        "LM Studio",
+        lms_cmd,
+        args,
+        stdin_input,
+        "LM Studio CLI (lms) not found. Please install it from https://lmstudio.ai".to_string(),
+        None,
+        None,
+    )
+    .await?;
+
+    if result.success {
+        let edited_content = result.output.trim().to_string();
+        if edited_content.is_empty() {
+            return Ok(AiExecutionResult {
+                success: false,
+                output: String::new(),
+                error: Some("LM Studio returned empty output. Please try again.".to_string()),
+            });
+        }
+        tokio::fs::write(&canonical, edited_content.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to write edited file: {}", e))?;
+
+        Ok(AiExecutionResult {
+            success: true,
+            output: "Note edited successfully with LM Studio.".to_string(),
+            error: None,
+        })
+    } else {
+        Ok(result)
+    }
+}
+
+#[tauri::command]
+async fn ai_check_antigravity_cli() -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let path = get_expanded_path();
+        check_cli_exists("antigravity", &path) || check_cli_exists("ag", &path)
+    })
+    .await
+    .map_err(|e| format!("Failed to check Antigravity CLI: {}", e))?
+}
+
+#[tauri::command]
+async fn ai_execute_antigravity(
+    file_path: String,
+    prompt: String,
+    model: String,
+    state: State<'_, AppState>,
+) -> Result<AiExecutionResult, String> {
+    let folder = {
+        let app_config = state.app_config.read().expect("app_config read lock");
+        app_config.notes_folder.clone().ok_or("Notes folder not set")?
+    };
+    let path = PathBuf::from(&file_path);
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    if !ext.eq_ignore_ascii_case("md") && !ext.eq_ignore_ascii_case("markdown") {
+        return Err("AI editing is only supported for markdown files".to_string());
+    }
+    let canonical = path
+        .canonicalize()
+        .map_err(|_| "Invalid file path".to_string())?;
+    let notes_root = PathBuf::from(&folder)
+        .canonicalize()
+        .map_err(|_| "Invalid notes folder".to_string())?;
+    if !canonical.starts_with(&notes_root) {
+        return Err("File must be within notes folder".to_string());
+    }
+
+    let ag_cmd = {
+        let path = get_expanded_path();
+        if check_cli_exists("antigravity", &path).unwrap_or(false) {
+            "antigravity".to_string()
+        } else {
+            "ag".to_string()
+        }
+    };
+
+    let run_prompt = format!(
+        "Edit the markdown file at {} directly in place based on these instructions:\n{}",
+        canonical.display(),
+        prompt
+    );
+
+    let mut args = vec![
+        canonical.to_string_lossy().to_string(),
+        "--prompt".to_string(),
+        run_prompt,
+    ];
+    if !model.trim().is_empty() {
+        args.push("--model".to_string());
+        args.push(model.trim().to_string());
+    }
+
+    execute_ai_cli(
+        "Antigravity",
+        ag_cmd,
+        args,
+        String::new(),
+        "Antigravity CLI not found. Please install it from https://antigravity.google".to_string(),
+        Some(notes_root.to_string_lossy().to_string()),
+        None,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -3555,77 +3715,36 @@ fn is_markdown_extension(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-// Preview mode: create a lightweight window for editing a single file
-fn create_preview_window(app: &AppHandle, file_path: &str) -> Result<(), String> {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let mut hasher = DefaultHasher::new();
-    file_path.hash(&mut hasher);
-    let label = format!("preview-{:x}", hasher.finish());
-
-    // If window already exists for this file, focus it
-    if let Some(window) = app.get_webview_window(&label) {
-        window.set_focus().map_err(|e| e.to_string())?;
-        return Ok(());
-    }
-
-    // Extract filename for the window title
-    let filename = PathBuf::from(file_path)
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "Preview".to_string());
-
-    let encoded_path = urlencoding::encode(file_path);
-    let url = format!("index.html?mode=preview&file={}", encoded_path);
-
-    let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
-        .title(format!("{} — Scratch", filename))
-        .inner_size(800.0, 600.0)
-        .min_inner_size(400.0, 300.0)
-        .resizable(true)
-        .decorations(true);
-
-    #[cfg(target_os = "macos")]
-    let builder = builder
-        .title_bar_style(tauri::TitleBarStyle::Overlay)
-        .hidden_title(true);
-
-    let window = builder
-        .build()
-        .map_err(|e| format!("Failed to create preview window: {}", e))?;
-
-    // Focus the preview window so it appears on top of the main window.
-    // Use a short delay because during cold start the main window may steal
-    // focus after its WebView finishes loading.
-    let win = window.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(500));
-        let _ = win.set_focus();
-    });
-
-    Ok(())
-}
-
 #[tauri::command]
-fn open_file_preview(app: AppHandle, path: String) -> Result<(), String> {
+async fn open_file_preview(app: AppHandle, path: String, state: State<'_, AppState>) -> Result<(), String> {
     let file_path = PathBuf::from(&path);
     if !file_path.exists() {
         return Err(format!("File not found: {}", path));
     }
 
     if !try_select_in_notes_folder(&app, &file_path) {
-        create_preview_window(&app, &path)?;
+        let has_notes_folder = state
+            .app_config
+            .read()
+            .expect("app_config read lock")
+            .notes_folder
+            .is_some();
+
+        if has_notes_folder {
+            let _ = import_file_to_folder(app.clone(), path, state).await;
+        } else if let Some(main_window) = app.get_webview_window("main") {
+            let _ = main_window.show();
+            let _ = main_window.set_focus();
+        }
+    } else if let Some(main_window) = app.get_webview_window("main") {
+        let _ = main_window.show();
+        let _ = main_window.set_focus();
     }
     Ok(())
 }
 
-// Handle CLI arguments: open .md files in preview mode.
-// Returns true if a standalone preview window was created (file outside notes folder).
-fn handle_cli_args(app: &AppHandle, args: &[String], cwd: &str) -> bool {
-    let mut opened_file = false;
-    let mut opened_preview = false;
-
+// Handle CLI arguments: open .md files or folders in the main interface.
+fn handle_cli_args(app: &AppHandle, args: &[String], cwd: &str) {
     for arg in args.iter().skip(1) {
         // Skip flags
         if arg.starts_with('-') {
@@ -3639,11 +3758,22 @@ fn handle_cli_args(app: &AppHandle, args: &[String], cwd: &str) -> bool {
         };
 
         if is_markdown_extension(&path) && path.is_file() {
-            opened_file = true;
-            if !try_select_in_notes_folder(app, &path)
-                && create_preview_window(app, &path.to_string_lossy()).is_ok()
-            {
-                opened_preview = true;
+            if !try_select_in_notes_folder(app, &path) {
+                if let Some(state) = app.try_state::<AppState>() {
+                    let has_notes_folder = state
+                        .app_config
+                        .read()
+                        .expect("app_config read lock")
+                        .notes_folder
+                        .is_some();
+                    if has_notes_folder {
+                        let path_str = path.to_string_lossy().into_owned();
+                        let app_clone = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = import_file_to_folder(app_clone, path_str, state).await;
+                        });
+                    }
+                }
             }
         } else if path.is_dir() {
             let canonical = path.canonicalize().unwrap_or(path.clone());
@@ -3654,28 +3784,18 @@ fn handle_cli_args(app: &AppHandle, args: &[String], cwd: &str) -> bool {
                 Ok(normalized_path) => {
                     // Emit event for when app is already running (single-instance)
                     let _ = app.emit("set-notes-folder", normalized_path);
-                    opened_file = true;
                 }
                 Err(e) => {
                     eprintln!("Failed to initialize notes folder {:?}: {}", canonical, e);
                 }
             }
-            if let Some(main_window) = app.get_webview_window("main") {
-                let _ = main_window.show();
-                let _ = main_window.set_focus();
-            }
         }
     }
 
-    // If no files were opened, show and focus the main window
-    if !opened_file {
-        if let Some(main_window) = app.get_webview_window("main") {
-            let _ = main_window.show();
-            let _ = main_window.set_focus();
-        }
+    if let Some(main_window) = app.get_webview_window("main") {
+        let _ = main_window.show();
+        let _ = main_window.set_focus();
     }
-
-    opened_preview
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -3752,42 +3872,19 @@ pub fn run() {
                 let _ = app.asset_protocol_scope().allow_directory(folder, true);
             }
 
-            // Handle CLI args on first launch; determine whether to show the main window.
-            // When a standalone preview is opened (file outside the notes folder) and the
-            // notes folder is already configured, the main window is closed so users only
-            // see the preview. When no notes folder is configured yet, the main window is
-            // always shown so new users can complete onboarding via the FolderPicker.
+            // Handle CLI args on first launch
             let args: Vec<String> = std::env::args().collect();
-            let opened_preview = if args.len() > 1 {
+            if args.len() > 1 {
                 let cwd = std::env::current_dir()
                     .unwrap_or_default()
                     .to_string_lossy()
                     .into_owned();
-                handle_cli_args(app.handle(), &args, &cwd)
-            } else {
-                false
-            };
+                handle_cli_args(app.handle(), &args, &cwd);
+            }
 
             if let Some(main_window) = app.get_webview_window("main") {
-                let has_notes_folder = app
-                    .state::<AppState>()
-                    .app_config
-                    .read()
-                    .expect("app_config read lock")
-                    .notes_folder
-                    .is_some();
-
-                if opened_preview && has_notes_folder {
-                    // Existing user: notes folder is configured and a standalone preview
-                    // was opened. Close the hidden main window so only the preview is visible.
-                    let _ = main_window.hide();
-                } else {
-                    // Show the main window when:
-                    // - No standalone preview was opened (normal launch), OR
-                    // - No notes folder is configured yet (new user needs FolderPicker
-                    //   for onboarding, even if a preview is also showing).
-                    let _ = main_window.show();
-                }
+                let _ = main_window.show();
+                let _ = main_window.set_focus();
             }
 
             Ok(())
@@ -3797,11 +3894,18 @@ pub fn run() {
             if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
                 let app = window.app_handle();
                 for path in paths {
-                    if is_markdown_extension(path)
-                        && path.is_file()
-                        && !try_select_in_notes_folder(app, path)
-                    {
-                        let _ = create_preview_window(app, &path.to_string_lossy());
+                    if is_markdown_extension(path) && path.is_file() {
+                        if !try_select_in_notes_folder(app, path) {
+                            if let Some(state) = app.try_state::<AppState>() {
+                                if state.app_config.read().unwrap().notes_folder.is_some() {
+                                    let path_str = path.to_string_lossy().into_owned();
+                                    let app_clone = app.clone();
+                                    tauri::async_runtime::spawn(async move {
+                                        let _ = import_file_to_folder(app_clone, path_str, state).await;
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -3850,10 +3954,14 @@ pub fn run() {
             ai_check_codex_cli,
             ai_check_opencode_cli,
             ai_check_ollama_cli,
+            ai_check_lmstudio_cli,
+            ai_check_antigravity_cli,
             ai_execute_claude,
             ai_execute_codex,
             ai_execute_opencode,
             ai_execute_ollama,
+            ai_execute_lmstudio,
+            ai_execute_antigravity,
             read_file_direct,
             save_file_direct,
             import_file_to_folder,
@@ -3873,11 +3981,18 @@ pub fn run() {
         if let tauri::RunEvent::Opened { urls } = _event {
             for url in urls {
                 if let Ok(path) = url.to_file_path() {
-                    if is_markdown_extension(&path)
-                        && path.is_file()
-                        && !try_select_in_notes_folder(_app_handle, &path)
-                    {
-                        let _ = create_preview_window(_app_handle, &path.to_string_lossy());
+                    if is_markdown_extension(&path) && path.is_file() {
+                        if !try_select_in_notes_folder(_app_handle, &path) {
+                            if let Some(state) = _app_handle.try_state::<AppState>() {
+                                if state.app_config.read().unwrap().notes_folder.is_some() {
+                                    let path_str = path.to_string_lossy().into_owned();
+                                    let app_clone = _app_handle.clone();
+                                    tauri::async_runtime::spawn(async move {
+                                        let _ = import_file_to_folder(app_clone, path_str, state).await;
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -3952,7 +4067,7 @@ fn set_title_bar_theme(
     #[cfg(target_os = "windows")]
     {
         for (label, window) in app.webview_windows() {
-            if label == "main" || label.starts_with("preview-") {
+            if label == "main" {
                 windows_title_bar::apply_title_bar_theme(&window, is_dark, (r, g, b));
             }
         }

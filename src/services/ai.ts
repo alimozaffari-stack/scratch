@@ -1,11 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export type AiProvider = "claude" | "codex" | "opencode" | "ollama";
+export type AiProvider =
+  | "claude"
+  | "codex"
+  | "opencode"
+  | "ollama"
+  | "lmstudio"
+  | "antigravity";
+
 export const AI_PROVIDER_ORDER: ReadonlyArray<AiProvider> = [
   "claude",
   "codex",
   "opencode",
   "ollama",
+  "lmstudio",
+  "antigravity",
 ];
 
 export interface AiExecutionResult {
@@ -51,11 +60,37 @@ export async function checkOllamaCli(): Promise<boolean> {
   return invoke("ai_check_ollama_cli");
 }
 
+export async function checkLMStudioCli(): Promise<boolean> {
+  return invoke("ai_check_lmstudio_cli");
+}
+
+export async function executeLMStudioEdit(
+  filePath: string,
+  prompt: string,
+  model?: string
+): Promise<AiExecutionResult> {
+  return invoke("ai_execute_lmstudio", { filePath, prompt, model: model || "" });
+}
+
+export async function checkAntigravityCli(): Promise<boolean> {
+  return invoke("ai_check_antigravity_cli");
+}
+
+export async function executeAntigravityEdit(
+  filePath: string,
+  prompt: string,
+  model?: string
+): Promise<AiExecutionResult> {
+  return invoke("ai_execute_antigravity", { filePath, prompt, model: model || "" });
+}
+
 const providerCheckers: Record<AiProvider, () => Promise<boolean>> = {
   claude: checkClaudeCli,
   codex: checkCodexCli,
   opencode: checkOpenCodeCli,
   ollama: checkOllamaCli,
+  lmstudio: checkLMStudioCli,
+  antigravity: checkAntigravityCli,
 };
 
 export async function getAvailableAiProviders(): Promise<AiProvider[]> {
