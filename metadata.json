@@ -1,0 +1,6 @@
+{
+  "name": "Scratch Assistant",
+  "description": "A markdown note-taking app integrated with an AI admin assistant to organize emails, calendars, meetings, and tasks in one place.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
