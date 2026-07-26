@@ -1911,7 +1911,6 @@ async fn save_file_direct(path: String, content: String) -> Result<FileContent, 
 async fn import_file_to_folder(
     app: AppHandle,
     path: String,
-    state: State<'_, AppState>,
 ) -> Result<NoteMetadata, String> {
     let source = validate_preview_path(&path)?;
     if !source.is_file() {
@@ -1919,6 +1918,7 @@ async fn import_file_to_folder(
     }
 
     let folder = {
+        let state = app.state::<AppState>();
         let app_config = state.app_config.read().expect("app_config read lock");
         app_config
             .notes_folder
@@ -1979,6 +1979,7 @@ async fn import_file_to_folder(
 
     // Update search index
     {
+        let state = app.state::<AppState>();
         let index = state.search_index.lock().expect("search index mutex");
         if let Some(ref search_index) = *index {
             let _ = search_index.index_note(&final_id, &extracted_title, &content, modified);
@@ -2002,6 +2003,7 @@ async fn import_file_to_folder(
 
     // Update notes cache so fallback search sees the imported note immediately
     {
+        let state = app.state::<AppState>();
         let mut cache = state.notes_cache.write().expect("cache write lock");
         cache.insert(metadata.id.clone(), metadata.clone());
     }
@@ -3008,6 +3010,16 @@ async fn ai_check_opencode_cli() -> Result<bool, String> {
     .map_err(|e| format!("Failed to check OpenCode CLI: {}", e))?
 }
 
+#[tauri::command]
+async fn ai_check_ollama_cli() -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let path = get_expanded_path();
+        check_cli_exists("ollama", &path)
+    })
+    .await
+    .map_err(|e| format!("Failed to check Ollama CLI: {}", e))?
+}
+
 /// Shared AI CLI execution: spawns `command` with `args`, writes `stdin_input` to stdin,
 /// and returns the result with a 5-minute timeout.
 async fn execute_ai_cli(
@@ -3347,7 +3359,11 @@ async fn ai_execute_opencode(
 async fn ai_check_lmstudio_cli() -> Result<bool, String> {
     tauri::async_runtime::spawn_blocking(|| {
         let path = get_expanded_path();
-        check_cli_exists("lms", &path) || check_cli_exists("lmstudio", &path)
+        if check_cli_exists("lms", &path)? {
+            Ok(true)
+        } else {
+            check_cli_exists("lmstudio", &path)
+        }
     })
     .await
     .map_err(|e| format!("Failed to check LM Studio CLI: {}", e))?
@@ -3444,7 +3460,11 @@ async fn ai_execute_lmstudio(
 async fn ai_check_antigravity_cli() -> Result<bool, String> {
     tauri::async_runtime::spawn_blocking(|| {
         let path = get_expanded_path();
-        check_cli_exists("antigravity", &path) || check_cli_exists("ag", &path)
+        if check_cli_exists("antigravity", &path)? {
+            Ok(true)
+        } else {
+            check_cli_exists("ag", &path)
+        }
     })
     .await
     .map_err(|e| format!("Failed to check Antigravity CLI: {}", e))?
@@ -3731,7 +3751,7 @@ async fn open_file_preview(app: AppHandle, path: String, state: State<'_, AppSta
             .is_some();
 
         if has_notes_folder {
-            let _ = import_file_to_folder(app.clone(), path, state).await;
+            let _ = import_file_to_folder(app.clone(), path).await;
         } else if let Some(main_window) = app.get_webview_window("main") {
             let _ = main_window.show();
             let _ = main_window.set_focus();
@@ -3770,7 +3790,7 @@ fn handle_cli_args(app: &AppHandle, args: &[String], cwd: &str) {
                         let path_str = path.to_string_lossy().into_owned();
                         let app_clone = app.clone();
                         tauri::async_runtime::spawn(async move {
-                            let _ = import_file_to_folder(app_clone, path_str, state).await;
+                            let _ = import_file_to_folder(app_clone, path_str).await;
                         });
                     }
                 }
@@ -3901,7 +3921,7 @@ pub fn run() {
                                     let path_str = path.to_string_lossy().into_owned();
                                     let app_clone = app.clone();
                                     tauri::async_runtime::spawn(async move {
-                                        let _ = import_file_to_folder(app_clone, path_str, state).await;
+                                        let _ = import_file_to_folder(app_clone, path_str).await;
                                     });
                                 }
                             }
@@ -3988,7 +4008,7 @@ pub fn run() {
                                     let path_str = path.to_string_lossy().into_owned();
                                     let app_clone = _app_handle.clone();
                                     tauri::async_runtime::spawn(async move {
-                                        let _ = import_file_to_folder(app_clone, path_str, state).await;
+                                        let _ = import_file_to_folder(app_clone, path_str).await;
                                     });
                                 }
                             }
