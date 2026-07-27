@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import type { Note, NoteMetadata, Comment, Footnote, SortOption } from "../types/note";
 import { recordCreationDate } from "../lib/utils";
 import * as notesService from "../services/notes";
@@ -936,15 +937,40 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     };
   }, [refreshNotes]);
 
-  // Listen for "select-note" events from the backend (CLI, drag-drop, Open With, import from preview)
+  // Register before draining native startup requests so first-launch file associations
+  // cannot emit a selection event before the React interface is listening.
   useEffect(() => {
-    const unlisten = listen<string>("select-note", (event) => {
-      // Refresh the notes list so the sidebar shows the new note immediately
-      refreshNotes();
-      selectNote(event.payload);
-    });
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+
+    const registerSelectionListener = async () => {
+      const dispose = await listen<string>("select-note", (event) => {
+        // Refresh the notes list so the sidebar shows the new note immediately
+        void refreshNotes();
+        void selectNote(event.payload);
+      });
+
+      if (cancelled) {
+        dispose();
+        return;
+      }
+      unlisten = dispose;
+
+      const pendingNoteIds = await invoke<string[]>("mark_main_ui_ready");
+      if (cancelled || pendingNoteIds.length === 0) return;
+
+      await refreshNotes();
+      for (const noteId of pendingNoteIds) {
+        if (cancelled) return;
+        await selectNote(noteId);
+      }
+    };
+
+    void registerSelectionListener();
+
     return () => {
-      unlisten.then((fn) => fn());
+      cancelled = true;
+      unlisten?.();
     };
   }, [selectNote, refreshNotes]);
 

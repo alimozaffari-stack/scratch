@@ -2,7 +2,8 @@ use anyhow::Result;
 use base64::Engine;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{hash_map::DefaultHasher, HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
@@ -10,7 +11,7 @@ use tantivy::collector::TopDocs;
 use tantivy::query::QueryParser;
 use tantivy::schema::*;
 use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy};
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow};
 use tauri::webview::WebviewWindowBuilder;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tokio::fs;
@@ -337,6 +338,11 @@ pub struct AppState {
     pub file_watcher: Mutex<Option<FileWatcherState>>,
     pub search_index: Mutex<Option<SearchIndex>>,
     pub debounce_map: Arc<Mutex<HashMap<PathBuf, Instant>>>,
+    // Note selections received before the React interface has registered its listener.
+    pub pending_note_selections: Mutex<Vec<String>>,
+    pub main_ui_ready: Mutex<bool>,
+    // Canonical external-file paths keyed by their transient preview-window label.
+    pub preview_files: Mutex<HashMap<String, String>>,
 }
 
 impl Default for AppState {
@@ -348,6 +354,9 @@ impl Default for AppState {
             file_watcher: Mutex::new(None),
             search_index: Mutex::new(None),
             debounce_map: Arc::new(Mutex::new(HashMap::new())),
+            pending_note_selections: Mutex::new(Vec::new()),
+            main_ui_ready: Mutex::new(false),
+            preview_files: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -2008,8 +2017,8 @@ async fn import_file_to_folder(
         cache.insert(metadata.id.clone(), metadata.clone());
     }
 
-    // Tell the main window to select the imported note and focus it
-    let _ = app.emit_to("main", "select-note", &metadata.id);
+    // Tell the main window to select the imported note once its React listener is ready.
+    select_note_when_ready(&app, metadata.id.clone());
     if let Some(main_window) = app.get_webview_window("main") {
         let _ = main_window.set_focus();
     }
@@ -3676,7 +3685,99 @@ async fn ai_execute_ollama(
 
 /// Check if a markdown file is inside the configured notes folder.
 /// If so, emit a "select-note" event to the main window and focus it, returning true.
-/// Returns false on any failure so callers can fall back to create_preview_window.
+/// Returns false on any failure so callers can fall back to the direct preview window.
+fn select_note_when_ready(app: &AppHandle, note_id: String) {
+    let should_emit = {
+        let state = app.state::<AppState>();
+        let is_ready = *state.main_ui_ready.lock().expect("main_ui_ready mutex");
+        if !is_ready {
+            let mut pending = state
+                .pending_note_selections
+                .lock()
+                .expect("pending_note_selections mutex");
+            if !pending.iter().any(|pending_id| pending_id == &note_id) {
+                pending.push(note_id.clone());
+            }
+        }
+        is_ready
+    };
+
+    if should_emit {
+        let _ = app.emit_to("main", "select-note", note_id);
+    }
+}
+
+#[tauri::command]
+fn mark_main_ui_ready(state: State<'_, AppState>) -> Vec<String> {
+    *state.main_ui_ready.lock().expect("main_ui_ready mutex") = true;
+    let mut pending = state
+        .pending_note_selections
+        .lock()
+        .expect("pending_note_selections mutex");
+    std::mem::take(&mut *pending)
+}
+
+fn preview_window_label(path: &Path) -> String {
+    let mut hasher = DefaultHasher::new();
+    path.hash(&mut hasher);
+    format!("preview-{:016x}", hasher.finish())
+}
+
+/// Open an external markdown file in a dedicated direct-file editor window.
+/// The path is kept only in native state and is never converted into a notes-folder ID.
+fn open_external_file_preview(app: &AppHandle, path: &Path) -> Result<(), String> {
+    let canonical = validate_preview_path(&path.to_string_lossy())?;
+    let label = preview_window_label(&canonical);
+
+    if let Some(existing) = app.get_webview_window(&label) {
+        let _ = existing.show();
+        let _ = existing.set_focus();
+        return Ok(());
+    }
+
+    {
+        let state = app.state::<AppState>();
+        state
+            .preview_files
+            .lock()
+            .expect("preview_files mutex")
+            .insert(label.clone(), canonical.to_string_lossy().into_owned());
+    }
+
+    let title = canonical
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Markdown file");
+
+    let preview = WebviewWindowBuilder::new(app, label.clone(), WebviewUrl::App("index.html".into()))
+        .title(format!("{} — Scratch", title))
+        .inner_size(1080.0, 720.0)
+        .min_inner_size(600.0, 400.0)
+        .build()
+        .map_err(|error| {
+            let state = app.state::<AppState>();
+            state
+                .preview_files
+                .lock()
+                .expect("preview_files mutex")
+                .remove(&label);
+            format!("Failed to open markdown file: {}", error)
+        })?;
+
+    let _ = preview.set_focus();
+    Ok(())
+}
+
+#[tauri::command]
+fn get_preview_file_path(window: WebviewWindow, state: State<'_, AppState>) -> Option<String> {
+    state
+        .preview_files
+        .lock()
+        .expect("preview_files mutex")
+        .get(window.label())
+        .cloned()
+}
+
 fn try_select_in_notes_folder(app: &AppHandle, path: &Path) -> bool {
     let state = match app.try_state::<AppState>() {
         Some(s) => s,
@@ -3716,7 +3817,7 @@ fn try_select_in_notes_folder(app: &AppHandle, path: &Path) -> bool {
         None => return false,
     };
 
-    let _ = app.emit_to("main", "select-note", note_id);
+    select_note_when_ready(app, note_id);
     if let Some(main_window) = app.get_webview_window("main") {
         let _ = main_window.show();
         let _ = main_window.set_focus();
@@ -3736,34 +3837,15 @@ fn is_markdown_extension(path: &Path) -> bool {
 }
 
 #[tauri::command]
-async fn open_file_preview(app: AppHandle, path: String, state: State<'_, AppState>) -> Result<(), String> {
-    let file_path = PathBuf::from(&path);
-    if !file_path.exists() {
-        return Err(format!("File not found: {}", path));
-    }
-
-    if !try_select_in_notes_folder(&app, &file_path) {
-        let has_notes_folder = state
-            .app_config
-            .read()
-            .expect("app_config read lock")
-            .notes_folder
-            .is_some();
-
-        if has_notes_folder {
-            let _ = import_file_to_folder(app.clone(), path).await;
-        } else if let Some(main_window) = app.get_webview_window("main") {
-            let _ = main_window.show();
-            let _ = main_window.set_focus();
-        }
-    } else if let Some(main_window) = app.get_webview_window("main") {
-        let _ = main_window.show();
-        let _ = main_window.set_focus();
+fn open_file_preview(app: AppHandle, path: String) -> Result<(), String> {
+    let canonical = validate_preview_path(&path)?;
+    if !try_select_in_notes_folder(&app, &canonical) {
+        open_external_file_preview(&app, &canonical)?;
     }
     Ok(())
 }
 
-// Handle CLI arguments: open .md files or folders in the main interface.
+// Handle CLI arguments: select managed notes or open external markdown files directly.
 fn handle_cli_args(app: &AppHandle, args: &[String], cwd: &str) {
     for arg in args.iter().skip(1) {
         // Skip flags
@@ -3779,20 +3861,8 @@ fn handle_cli_args(app: &AppHandle, args: &[String], cwd: &str) {
 
         if is_markdown_extension(&path) && path.is_file() {
             if !try_select_in_notes_folder(app, &path) {
-                if let Some(state) = app.try_state::<AppState>() {
-                    let has_notes_folder = state
-                        .app_config
-                        .read()
-                        .expect("app_config read lock")
-                        .notes_folder
-                        .is_some();
-                    if has_notes_folder {
-                        let path_str = path.to_string_lossy().into_owned();
-                        let app_clone = app.clone();
-                        tauri::async_runtime::spawn(async move {
-                            let _ = import_file_to_folder(app_clone, path_str).await;
-                        });
-                    }
+                if let Err(error) = open_external_file_preview(app, &path) {
+                    eprintln!("Failed to open markdown file {:?}: {}", path, error);
                 }
             }
         } else if path.is_dir() {
@@ -3884,6 +3954,9 @@ pub fn run() {
                 file_watcher: Mutex::new(None),
                 search_index: Mutex::new(search_index),
                 debounce_map: Arc::new(Mutex::new(HashMap::new())),
+                pending_note_selections: Mutex::new(Vec::new()),
+                main_ui_ready: Mutex::new(false),
+                preview_files: Mutex::new(HashMap::new()),
             };
             app.manage(state);
 
@@ -3916,14 +3989,8 @@ pub fn run() {
                 for path in paths {
                     if is_markdown_extension(path) && path.is_file() {
                         if !try_select_in_notes_folder(app, path) {
-                            if let Some(state) = app.try_state::<AppState>() {
-                                if state.app_config.read().unwrap().notes_folder.is_some() {
-                                    let path_str = path.to_string_lossy().into_owned();
-                                    let app_clone = app.clone();
-                                    tauri::async_runtime::spawn(async move {
-                                        let _ = import_file_to_folder(app_clone, path_str).await;
-                                    });
-                                }
+                            if let Err(error) = open_external_file_preview(app, path) {
+                                eprintln!("Failed to open dropped markdown file {:?}: {}", path, error);
                             }
                         }
                     }
@@ -3986,6 +4053,8 @@ pub fn run() {
             save_file_direct,
             import_file_to_folder,
             open_file_preview,
+            mark_main_ui_ready,
+            get_preview_file_path,
             install_cli,
             uninstall_cli,
             get_cli_status,
@@ -4003,14 +4072,8 @@ pub fn run() {
                 if let Ok(path) = url.to_file_path() {
                     if is_markdown_extension(&path) && path.is_file() {
                         if !try_select_in_notes_folder(_app_handle, &path) {
-                            if let Some(state) = _app_handle.try_state::<AppState>() {
-                                if state.app_config.read().unwrap().notes_folder.is_some() {
-                                    let path_str = path.to_string_lossy().into_owned();
-                                    let app_clone = _app_handle.clone();
-                                    tauri::async_runtime::spawn(async move {
-                                        let _ = import_file_to_folder(app_clone, path_str).await;
-                                    });
-                                }
+                            if let Err(error) = open_external_file_preview(_app_handle, &path) {
+                                eprintln!("Failed to open markdown file {:?}: {}", path, error);
                             }
                         }
                     }
