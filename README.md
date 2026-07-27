@@ -2,119 +2,87 @@
 
 <img src="docs/app-icon.png" alt="Scratch" width="128" height="128" style="border-radius: 22px; margin-bottom: 8px;">
 
-A minimalist, offline-first markdown note-taking app for macOS, Windows, and Linux.
+Scratch is an independently maintained, offline-first desktop Markdown application for Windows, macOS, and Linux. It stores managed notes as plain Markdown files that remain under your control.
 
-![macOS](https://img.shields.io/badge/platform-macOS-lightgrey) ![Windows](https://img.shields.io/badge/platform-Windows-blue) ![Linux](https://img.shields.io/badge/platform-Linux-orange)
+**This repository is the authoritative source and release location for this edition of Scratch.** It is a separate project from the original upstream application; its releases, support, and roadmap are maintained here.
 
-[Website](https://www.ericli.io/scratch) · [Releases](https://github.com/erictli/scratch/releases)
+[Releases](https://github.com/alimozaffari-stack/scratch/releases) · [Source code](https://github.com/alimozaffari-stack/scratch)
 
-## Features
+## Current release: v0.11.1
 
-- **Offline-first** - No cloud, no account, no internet required
-- **Markdown-based** - Notes stored as plain `.md` files you own
-- **WYSIWYG editing** - Rich text editing that saves as markdown
-- **Preview mode** - Open any `.md` file via drag-and-drop or "Open With" without a notes folder
-- **Markdown source mode** - Toggle to view and edit raw markdown (`Cmd+Shift+M`)
-- **Syntax highlighting** - 20 languages with GitHub-inspired color scheme
-- **Mermaid diagrams** - Render flowcharts, sequence diagrams, and more in fenced code blocks
-- **KaTeX math** - Render block `$$...$$` math equations
-- **Wikilinks** - Type `[[` to link between notes with autocomplete
-- **Slash commands** - Type `/` to quickly insert headings, lists, code blocks, diagrams, and more
-- **Focus mode** - Distraction-free writing with animated sidebar/toolbar fade (`Cmd+Shift+Enter`)
-- **Edit with Claude Code, OpenAI Codex, OpenCode, or Ollama** - Use your local CLI to edit notes with AI (including fully offline via Ollama)
-- **Works with other AI agents** - Detects external file changes
-- **Folders** - Opt-in collapsible folder tree with drag-and-drop to organize notes
-- **Keyboard optimized** - Lots of shortcuts and a command palette
-- **Customizable** - Theme, typography, page width, and RTL text direction
-- **Git integration** - Optional version control with push/pull for multi-device sync
-- **Lightweight** - 5-10x smaller than Obsidian or Notion
+Version 0.11.1 fixes how Scratch opens Markdown documents from the operating system.
 
-## Screenshot
+- **Open a managed note reliably:** double-clicking a Markdown file already inside Scratch’s configured notes folder selects it in the main Scratch window, including when Scratch is starting.
+- **Open external files directly:** double-clicking, using **Open with**, dragging in, or otherwise opening an external `.md` or `.markdown` file opens a dedicated Scratch editor window for that file.
+- **Keep the original location:** external files are read from and saved back to their original path. Scratch does not silently import or duplicate them in the notes sidebar.
+- **Avoid repeat windows:** opening the same external file again while Scratch is running focuses its existing editor window rather than creating another copy.
+- **Import only by choice:** the direct-file window still provides an explicit **Save to notes folder** action when you want to create a managed copy.
+- **No tabs yet:** Scratch currently uses one managed document view in the main window and separate windows for directly opened external files. Tabbed documents are not part of this release.
+- **Manual downloads:** installers are published on this repository’s GitHub Releases page. In-app automatic updating is not enabled for this edition.
 
-![Screenshot](docs/screenshot.png)
+The release workflow builds desktop packages for Windows, macOS, and Linux when the corresponding GitHub Actions jobs complete successfully.
+
+## What Scratch does
+
+- Creates and manages Markdown notes in a folder you choose; create a new note with `Ctrl+N` on Windows or `Cmd+N` on macOS.
+- Provides rich-text editing that saves as Markdown, plus a raw Markdown source mode.
+- Opens external Markdown files without taking ownership of them.
+- Supports folders, search, syntax highlighting, Mermaid diagrams, KaTeX math, wikilinks, slash commands, focus mode, themes, typography settings, RTL text, and optional Git integration.
+- Can work with local AI command-line tools and detects external changes to open files.
+- Runs locally: it does not require a cloud account or internet connection for normal note editing.
 
 ## Installation
 
-### macOS
-
-**Homebrew (Recommended)**
-
-```bash
-brew tap erictli/tap
-brew install --cask erictli/tap/scratch
-```
-
-**Manual Download**
-
-1. Download the latest `.dmg` from [Releases](https://github.com/erictli/scratch/releases)
-2. Open the DMG and drag Scratch to Applications
-3. Open Scratch from Applications
+Download the installer or package for your platform from the [Releases page](https://github.com/alimozaffari-stack/scratch/releases).
 
 ### Windows
 
-Download the latest `.exe` installer from [Releases](https://github.com/erictli/scratch/releases) and run it. WebView2 will be downloaded automatically if needed.
+1. Download the current Windows `.exe` installer.
+2. Close any running Scratch windows.
+3. Run the installer, then open Scratch or double-click a Markdown file.
 
-### Linux
+Windows installs WebView2 automatically if it is not already available.
 
-Download the latest `.AppImage` or `.deb` from [Releases](https://github.com/erictli/scratch/releases).
+### macOS and Linux
 
-### From Source
+Download the available package for your platform from the [Releases page](https://github.com/alimozaffari-stack/scratch/releases) and follow the normal platform installation steps.
 
-**Prerequisites:** Node.js 18+, Rust 1.70+
+### From source
 
-**macOS:** Xcode Command Line Tools · **Windows:** WebView2 Runtime (pre-installed on Windows 11)
+**Prerequisites:** Node.js 18+ and Rust 1.70+.
 
 ```bash
-git clone https://github.com/erictli/scratch.git
+git clone https://github.com/alimozaffari-stack/scratch.git
 cd scratch
 npm install
 npm run tauri dev      # Development
 npm run tauri build    # Production build
 ```
 
-## Keyboard Shortcuts
+## Essential shortcuts
 
-Scratch is designed to be usable without a mouse. Here are the essentials to get started:
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl/Cmd+N` | New managed note |
+| `Ctrl/Cmd+D` | Duplicate managed note |
+| `Ctrl/Cmd+P` | Command palette |
+| `Ctrl/Cmd+F` | Find in the current document |
+| `Ctrl/Cmd+Shift+M` | Toggle Markdown source mode |
+| `Ctrl/Cmd+Shift+Enter` | Toggle focus mode |
+| `Ctrl/Cmd+Shift+F` | Search managed notes |
+| `Ctrl/Cmd+R` | Reload the current document from disk |
+| `Ctrl/Cmd+,` | Open settings |
+| `Ctrl/Cmd+\\` | Toggle sidebar |
 
-| Shortcut          | Action                 |
-| ----------------- | ---------------------- |
-| `Cmd+N`           | New note               |
-| `Cmd+D`           | Duplicate note         |
-| `Delete`          | Delete note            |
-| `Cmd+Backspace`   | Delete note            |
-| `Cmd+P`           | Command palette        |
-| `Cmd+K`           | Add/edit link          |
-| `Cmd+F`           | Find in note           |
-| `Cmd+Shift+C`     | Copy & Export menu     |
-| `Cmd+Shift+M`     | Toggle Markdown source |
-| `Cmd+Shift+Enter` | Toggle Focus mode      |
-| `Cmd+Shift+F`     | Search notes           |
-| `Cmd+R`           | Reload current note    |
-| `Cmd+,`           | Open settings          |
-| `Cmd+\`           | Toggle sidebar         |
-| `Cmd+B/I`         | Bold/Italic            |
-| `Cmd+=/-/0`       | Zoom in/out/reset      |
-| `↑/↓`             | Navigate notes         |
-
-**Note:** On Windows, use `Ctrl` instead of `Cmd` for all shortcuts.
-
-Many more shortcuts and features are available in the app—explore via the command palette (`Cmd+P` / `Ctrl+P`) or view the full reference in Settings → Shortcuts.
-
-## Built With
+## Built with
 
 [Tauri](https://tauri.app/) · [React](https://react.dev/) · [TipTap](https://tiptap.dev/) · [Tailwind CSS](https://tailwindcss.com/) · [Tantivy](https://github.com/quickwit-oss/tantivy)
 
-## Contributing
+## Upstream acknowledgement
 
-Contributions and suggestions are welcome. Scratch is actively maintained but the release cycle is at the whim of my schedule – sometimes I'll review and merge same-day, sometimes it may take several weeks.
+This project was originally derived from [Scratch by Eric Li](https://github.com/erictli/scratch). We thank Eric Li and the upstream contributors for the source application on which this independently maintained edition is based.
 
-What makes Scratch special is its minimal feature set and focus on user experience. We're not trying to build Obsidian or Notion, so not every feature will be a fit.
-
-**Small fixes and improvements:** go ahead and open a PR, we'll try to merge these in regularly.
-
-**Bigger changes:** if you're not sure whether a feature fits, open an issue first and ask.
-
-**Review process:** I generally won't go back and forth with review comments. Try to address any CodeRabbit comments on your PR. From there, I'll make any additional changes directly.
+This repository is not affiliated with, endorsed by, or supported by the upstream project. Please use this repository for this edition’s releases and issues. The upstream project’s README identifies its licence as MIT; applicable upstream copyright and licence notices remain in effect.
 
 ## License
 
