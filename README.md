@@ -8,16 +8,16 @@ Scratch is an independently maintained, offline-first desktop Markdown applicati
 
 [Releases](https://github.com/alimozaffari-stack/scratch/releases) · [Source code](https://github.com/alimozaffari-stack/scratch)
 
-## Current release: v0.11.1
+## Current release: v0.11.2
 
-Version 0.11.1 fixes how Scratch opens Markdown documents from the operating system.
+Version 0.11.2 corrects how Scratch opens Markdown documents from the operating system and creates new managed notes.
 
 - **Open a managed note reliably:** double-clicking a Markdown file already inside Scratch’s configured notes folder selects it in the main Scratch window, including when Scratch is starting.
-- **Open external files directly:** double-clicking, using **Open with**, dragging in, or otherwise opening an external `.md` or `.markdown` file opens a dedicated Scratch editor window for that file.
+- **One main window:** double-clicking, using **Open with**, dragging in, or otherwise opening an external `.md` or `.markdown` file opens it in the main Scratch window. Scratch does not create a second viewer window.
 - **Keep the original location:** external files are read from and saved back to their original path. Scratch does not silently import or duplicate them in the notes sidebar.
-- **Avoid repeat windows:** opening the same external file again while Scratch is running focuses its existing editor window rather than creating another copy.
-- **Import only by choice:** the direct-file window still provides an explicit **Save to notes folder** action when you want to create a managed copy.
-- **No tabs yet:** Scratch currently uses one managed document view in the main window and separate windows for directly opened external files. Tabbed documents are not part of this release.
+- **Create a new managed note consistently:** `Ctrl+N` / `Cmd+N` and the sidebar `+` both create and open a new managed note. The external file remains unchanged.
+- **Import only by choice:** the direct-file view still provides an explicit **Save to notes folder** action when you want to create a managed copy.
+- **No tabs yet:** Scratch currently displays one document at a time in the main window. Tabbed documents are not part of this release.
 - **Manual downloads:** installers are published on this repository’s GitHub Releases page. In-app automatic updating is not enabled for this edition.
 
 The release workflow builds desktop packages for Windows, macOS, and Linux when the corresponding GitHub Actions jobs complete successfully.

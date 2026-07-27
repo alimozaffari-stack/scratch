@@ -31,9 +31,10 @@ import { FolderNameDialog } from "../notes/FolderNameDialog";
 
 interface SidebarProps {
   onOpenSettings?: () => void;
+  onCreateNote?: () => void | Promise<void>;
 }
 
-export function Sidebar({ onOpenSettings }: SidebarProps) {
+export function Sidebar({ onOpenSettings, onCreateNote }: SidebarProps) {
   const {
     createNote,
     createFolder,
@@ -47,6 +48,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
     sortBy,
     setSortBy,
   } = useNotes();
+  const createManagedNote = onCreateNote ?? createNote;
   const [searchOpen, setSearchOpen] = useState(false);
   const [inputValue, setInputValue] = useState(searchQuery);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
@@ -411,7 +413,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
                 >
                   <DropdownMenu.Item
                     className="px-3 py-1.5 text-sm text-text cursor-pointer outline-none hover:bg-bg-muted focus:bg-bg-muted flex items-center gap-2"
-                    onSelect={() => createNote()}
+                    onSelect={() => void createManagedNote()}
                   >
                     <AddNoteIcon className="w-4 h-4 stroke-[1.6]" />
                     <span className="flex-1">New Note</span>
@@ -433,7 +435,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
           ) : (
             <IconButton
               variant="ghost"
-              onClick={() => createNote()}
+              onClick={() => void createManagedNote()}
               title={`New Note (${mod}${isMac ? "" : "+"}N)`}
             >
               <PlusIcon className="w-5.25 h-5.25 stroke-[1.4]" />

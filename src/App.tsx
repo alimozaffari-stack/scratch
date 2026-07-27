@@ -7,6 +7,7 @@ import { GitProvider } from "./context/GitContext";
 import { TooltipProvider, Toaster } from "./components/ui";
 import { Sidebar } from "./components/layout/Sidebar";
 import { Editor } from "./components/editor/Editor";
+import { PreviewApp } from "./components/preview/PreviewApp";
 import type { Editor as TiptapEditor } from "@tiptap/react";
 import { FolderPicker } from "./components/layout/FolderPicker";
 import { CommandPalette } from "./components/command-palette/CommandPalette";
@@ -32,7 +33,15 @@ import type { AiProvider } from "./services/ai";
 
 type ViewState = "notes" | "settings";
 
-function AppContent() {
+interface AppContentProps {
+  externalFilePath: string | null;
+  onExitExternalFile: () => void;
+}
+
+function AppContent({
+  externalFilePath,
+  onExitExternalFile,
+}: AppContentProps) {
   const {
     notesFolder,
     isLoading,
@@ -61,6 +70,9 @@ function AppContent() {
   const [focusMode, setFocusMode] = useState(false);
   const [aiProvider, setAiProvider] = useState<AiProvider>("claude");
   const editorRef = useRef<TiptapEditor | null>(null);
+  const externalFileInitialNoteIdRef = useRef<string | null | undefined>(
+    undefined,
+  );
 
   // Listen for set-notes-folder event from CLI (scratch .)
   // Placed here in AppContent where both NotesContext and ThemeContext are available
@@ -86,15 +98,46 @@ function AppContent() {
 
   const toggleFocusMode = useCallback(() => {
     setFocusMode((prev) => {
-      // Don't enter focus mode without a selected note
-      if (!prev && !selectedNoteId) return prev;
+      // Don't enter focus mode without an open managed or external document.
+      if (!prev && !selectedNoteId && !externalFilePath) return prev;
       if (prev) {
         // Exiting focus mode — always restore sidebar
         setSidebarVisible(true);
       }
       return !prev;
     });
-  }, [selectedNoteId]);
+  }, [selectedNoteId, externalFilePath]);
+
+  const createManagedNote = useCallback(async () => {
+    if (!notesFolder) {
+      toast.error("Choose a notes folder before creating a new note");
+      return;
+    }
+    await createNote();
+    if (externalFilePath) onExitExternalFile();
+  }, [createNote, externalFilePath, notesFolder, onExitExternalFile]);
+
+  // Opening an external file leaves the managed-note selection intact in the
+  // sidebar. Selecting a different managed note returns to the normal editor.
+  useEffect(() => {
+    if (!externalFilePath || isLoading) {
+      externalFileInitialNoteIdRef.current = undefined;
+      return;
+    }
+    externalFileInitialNoteIdRef.current = selectedNoteId;
+  }, [externalFilePath, isLoading]);
+
+  useEffect(() => {
+    const initialNoteId = externalFileInitialNoteIdRef.current;
+    if (
+      externalFilePath &&
+      !isLoading &&
+      initialNoteId !== undefined &&
+      selectedNoteId !== initialNoteId
+    ) {
+      onExitExternalFile();
+    }
+  }, [externalFilePath, isLoading, onExitExternalFile, selectedNoteId]);
 
   const toggleSettings = useCallback(() => {
     setView((prev) => (prev === "settings" ? "notes" : "settings"));
@@ -319,7 +362,7 @@ function AppContent() {
       // Cmd+N - New note
       if ((e.metaKey || e.ctrlKey) && e.key === "n") {
         e.preventDefault();
-        createNote();
+        void createManagedNote();
         return;
       }
 
@@ -354,7 +397,11 @@ function AppContent() {
       // Cmd+R - Reload current note (pull external changes)
       if ((e.metaKey || e.ctrlKey) && e.key === "r") {
         e.preventDefault();
-        reloadCurrentNote();
+        if (externalFilePath) {
+          window.dispatchEvent(new CustomEvent("reload-external-file"));
+        } else {
+          reloadCurrentNote();
+        }
         return;
       }
 
@@ -427,7 +474,7 @@ function AppContent() {
       window.removeEventListener("contextmenu", handleContextMenu);
     };
   }, [
-    createNote,
+    createManagedNote,
     duplicateNote,
     displayItems,
     reloadCurrentNote,
@@ -438,6 +485,7 @@ function AppContent() {
     toggleFocusMode,
     focusMode,
     view,
+    externalFilePath,
     setInterfaceZoom,
   ]);
 
@@ -458,6 +506,15 @@ function AppContent() {
   }
 
   if (!notesFolder) {
+    if (externalFilePath) {
+      return (
+        <PreviewApp
+          filePath={externalFilePath}
+          focusMode={focusMode}
+          onExitPreview={onExitExternalFile}
+        />
+      );
+    }
     return <FolderPicker />;
   }
 
@@ -472,16 +529,29 @@ function AppContent() {
               data-sidebar
               className={`transition-all duration-500 ease-out overflow-hidden ${!sidebarVisible || focusMode ? "opacity-0 -translate-x-4 w-0 pointer-events-none" : "opacity-100 translate-x-0 w-64"}`}
             >
-              <Sidebar onOpenSettings={toggleSettings} />
+              <Sidebar
+                onOpenSettings={toggleSettings}
+                onCreateNote={createManagedNote}
+              />
             </div>
-            <Editor
-              onToggleSidebar={toggleSidebar}
-              sidebarVisible={sidebarVisible}
-              focusMode={focusMode}
-              onEditorReady={(editor) => {
-                editorRef.current = editor;
-              }}
-            />
+            {externalFilePath ? (
+              <PreviewApp
+                filePath={externalFilePath}
+                onToggleSidebar={toggleSidebar}
+                sidebarVisible={sidebarVisible}
+                focusMode={focusMode}
+                onExitPreview={onExitExternalFile}
+              />
+            ) : (
+              <Editor
+                onToggleSidebar={toggleSidebar}
+                sidebarVisible={sidebarVisible}
+                focusMode={focusMode}
+                onEditorReady={(editor) => {
+                  editorRef.current = editor;
+                }}
+              />
+            )}
           </>
         )}
       </div>
@@ -630,7 +700,15 @@ function UpdateToast({
   );
 }
 
-function App() {
+interface AppProps {
+  externalFilePath?: string | null;
+  onExitExternalFile?: () => void;
+}
+
+function App({
+  externalFilePath = null,
+  onExitExternalFile = () => undefined,
+}: AppProps) {
   // Cmd/Ctrl+W — close window
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -663,7 +741,10 @@ function App() {
       <TooltipProvider>
         <NotesProvider>
           <GitProvider>
-            <AppContent />
+            <AppContent
+              externalFilePath={externalFilePath}
+              onExitExternalFile={onExitExternalFile}
+            />
           </GitProvider>
         </NotesProvider>
       </TooltipProvider>

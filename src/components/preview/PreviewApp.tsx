@@ -1,25 +1,35 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { toast } from "sonner";
 import { Editor, type PreviewModeData } from "../editor/Editor";
 import * as filesService from "../../services/files";
 
 interface PreviewAppProps {
   filePath: string;
+  onToggleSidebar?: () => void;
+  sidebarVisible?: boolean;
+  focusMode?: boolean;
+  onExitPreview: () => void;
 }
 
-export function PreviewApp({ filePath }: PreviewAppProps) {
+export function PreviewApp({
+  filePath,
+  onToggleSidebar,
+  sidebarVisible,
+  focusMode = false,
+  onExitPreview,
+}: PreviewAppProps) {
   const [content, setContent] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [modified, setModified] = useState(0);
   const [hasExternalChanges, setHasExternalChanges] = useState(false);
   const [reloadVersion, setReloadVersion] = useState(0);
-  const [focusMode, setFocusMode] = useState(false);
   const recentlySavedRef = useRef(false);
 
   // Load file on mount
   useEffect(() => {
+    setContent(null);
+    setHasExternalChanges(false);
     filesService
       .readFileDirect(filePath)
       .then((result) => {
@@ -94,65 +104,15 @@ export function PreviewApp({ filePath }: PreviewAppProps) {
     };
   }, []);
 
-  // Keyboard shortcuts for preview mode
+  // The main app owns shared shortcuts. This listener only reloads the
+  // externally opened file when the main window requests it.
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const modKey = e.metaKey || e.ctrlKey;
-
-      // Cmd+Shift+Enter: Toggle focus mode
-      if (modKey && e.shiftKey && e.key === "Enter") {
-        e.preventDefault();
-        setFocusMode((prev) => !prev);
-        return;
-      }
-
-      // Cmd+Shift+M: Toggle markdown source mode
-      if (modKey && e.shiftKey && e.key.toLowerCase() === "m") {
-        e.preventDefault();
-        window.dispatchEvent(new CustomEvent("toggle-source-mode"));
-        return;
-      }
-
-      // Cmd+Shift+P: Print
-      if (modKey && e.shiftKey && e.key.toLowerCase() === "p") {
-        e.preventDefault();
-        window.dispatchEvent(new CustomEvent("print-note"));
-        return;
-      }
-
-      // Cmd+P: Block browser print dialog
-      if (modKey && !e.shiftKey && e.key === "p") {
-        e.preventDefault();
-        return;
-      }
-
-      // Cmd+R: Reload file from disk
-      if (modKey && e.key === "r") {
-        e.preventDefault();
-        reload();
-        return;
-      }
-
-      // Escape: Exit focus mode
-      if (e.key === "Escape" && focusMode) {
-        e.preventDefault();
-        setFocusMode(false);
-        return;
-      }
-
-      // Trap Tab to prevent focus leaving editor (only when editor is focused)
-      if (e.key === "Tab") {
-        const active = document.activeElement;
-        const editorEl = document.querySelector(".ProseMirror");
-        if (editorEl && editorEl.contains(active)) {
-          e.preventDefault();
-        }
-      }
+    const handleReload = () => {
+      void reload();
     };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [focusMode, reload]);
+    window.addEventListener("reload-external-file", handleReload);
+    return () => window.removeEventListener("reload-external-file", handleReload);
+  }, [reload]);
 
   const [isSaving, setIsSaving] = useState(false);
   const savingRef = useRef(false);
@@ -163,8 +123,8 @@ export function PreviewApp({ filePath }: PreviewAppProps) {
     setIsSaving(true);
     try {
       await filesService.importFileToFolder(filePath);
-      // Backend emits select-note + focuses main window; close this preview
-      await getCurrentWindow().close();
+      // The backend selects the imported note in the main interface.
+      onExitPreview();
     } catch (error) {
       console.error("Failed to save to folder:", error);
       toast.error(`Failed to save to folder: ${error}`);
@@ -172,7 +132,7 @@ export function PreviewApp({ filePath }: PreviewAppProps) {
       savingRef.current = false;
       setIsSaving(false);
     }
-  }, [filePath]);
+  }, [filePath, onExitPreview]);
 
   const previewData: PreviewModeData = {
     content,
@@ -186,9 +146,11 @@ export function PreviewApp({ filePath }: PreviewAppProps) {
   };
 
   return (
-    <div className="h-full min-h-0 flex flex-col bg-bg text-text">
+    <div className="flex-1 min-w-0 h-full min-h-0 flex flex-col bg-bg text-text">
       <Editor
         focusMode={focusMode}
+        onToggleSidebar={onToggleSidebar}
+        sidebarVisible={sidebarVisible}
         previewMode={previewData}
         onSaveToFolder={handleSaveToFolder}
         saveToFolderDisabled={isSaving}

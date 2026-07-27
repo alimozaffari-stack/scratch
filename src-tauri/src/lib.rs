@@ -2,8 +2,7 @@ use anyhow::Result;
 use base64::Engine;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
-use std::collections::{hash_map::DefaultHasher, HashMap, HashSet};
-use std::hash::{Hash, Hasher};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
@@ -11,8 +10,7 @@ use tantivy::collector::TopDocs;
 use tantivy::query::QueryParser;
 use tantivy::schema::*;
 use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy};
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow};
-use tauri::webview::WebviewWindowBuilder;
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
@@ -341,8 +339,8 @@ pub struct AppState {
     // Note selections received before the React interface has registered its listener.
     pub pending_note_selections: Mutex<Vec<String>>,
     pub main_ui_ready: Mutex<bool>,
-    // Canonical external-file paths keyed by their transient preview-window label.
-    pub preview_files: Mutex<HashMap<String, String>>,
+    // The external Markdown file currently displayed in the single main window.
+    pub open_external_file: Mutex<Option<String>>,
 }
 
 impl Default for AppState {
@@ -356,7 +354,7 @@ impl Default for AppState {
             debounce_map: Arc::new(Mutex::new(HashMap::new())),
             pending_note_selections: Mutex::new(Vec::new()),
             main_ui_ready: Mutex::new(false),
-            preview_files: Mutex::new(HashMap::new()),
+            open_external_file: Mutex::new(None),
         }
     }
 }
@@ -3685,7 +3683,7 @@ async fn ai_execute_ollama(
 
 /// Check if a markdown file is inside the configured notes folder.
 /// If so, emit a "select-note" event to the main window and focus it, returning true.
-/// Returns false on any failure so callers can fall back to the direct preview window.
+/// Returns false on any failure so callers can fall back to direct opening in the main window.
 fn select_note_when_ready(app: &AppHandle, note_id: String) {
     let should_emit = {
         let state = app.state::<AppState>();
@@ -3717,65 +3715,34 @@ fn mark_main_ui_ready(state: State<'_, AppState>) -> Vec<String> {
     std::mem::take(&mut *pending)
 }
 
-fn preview_window_label(path: &Path) -> String {
-    let mut hasher = DefaultHasher::new();
-    path.hash(&mut hasher);
-    format!("preview-{:016x}", hasher.finish())
-}
-
-/// Open an external markdown file in a dedicated direct-file editor window.
-/// The path is kept only in native state and is never converted into a notes-folder ID.
-fn open_external_file_preview(app: &AppHandle, path: &Path) -> Result<(), String> {
+/// Open an external Markdown file in the single main Scratch window.
+/// The canonical path is kept only in native state and is never converted into a notes-folder ID.
+fn open_external_file_in_main(app: &AppHandle, path: &Path) -> Result<(), String> {
     let canonical = validate_preview_path(&path.to_string_lossy())?;
-    let label = preview_window_label(&canonical);
-
-    if let Some(existing) = app.get_webview_window(&label) {
-        let _ = existing.show();
-        let _ = existing.set_focus();
-        return Ok(());
-    }
-
+    let path = canonical.to_string_lossy().into_owned();
     {
         let state = app.state::<AppState>();
-        state
-            .preview_files
+        *state
+            .open_external_file
             .lock()
-            .expect("preview_files mutex")
-            .insert(label.clone(), canonical.to_string_lossy().into_owned());
+            .expect("open_external_file mutex") = Some(path.clone());
     }
 
-    let title = canonical
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("Markdown file");
-
-    let preview = WebviewWindowBuilder::new(app, label.clone(), WebviewUrl::App("index.html".into()))
-        .title(format!("{} — Scratch", title))
-        .inner_size(1080.0, 720.0)
-        .min_inner_size(600.0, 400.0)
-        .build()
-        .map_err(|error| {
-            let state = app.state::<AppState>();
-            state
-                .preview_files
-                .lock()
-                .expect("preview_files mutex")
-                .remove(&label);
-            format!("Failed to open markdown file: {}", error)
-        })?;
-
-    let _ = preview.set_focus();
+    let _ = app.emit_to("main", "open-external-file", path);
+    if let Some(main_window) = app.get_webview_window("main") {
+        let _ = main_window.show();
+        let _ = main_window.set_focus();
+    }
     Ok(())
 }
 
 #[tauri::command]
-fn get_preview_file_path(window: WebviewWindow, state: State<'_, AppState>) -> Option<String> {
+fn get_open_external_file(state: State<'_, AppState>) -> Option<String> {
     state
-        .preview_files
+        .open_external_file
         .lock()
-        .expect("preview_files mutex")
-        .get(window.label())
-        .cloned()
+        .expect("open_external_file mutex")
+        .clone()
 }
 
 fn try_select_in_notes_folder(app: &AppHandle, path: &Path) -> bool {
@@ -3817,6 +3784,11 @@ fn try_select_in_notes_folder(app: &AppHandle, path: &Path) -> bool {
         None => return false,
     };
 
+    *state
+        .open_external_file
+        .lock()
+        .expect("open_external_file mutex") = None;
+    let _ = app.emit_to("main", "close-external-file", ());
     select_note_when_ready(app, note_id);
     if let Some(main_window) = app.get_webview_window("main") {
         let _ = main_window.show();
@@ -3840,12 +3812,12 @@ fn is_markdown_extension(path: &Path) -> bool {
 fn open_file_preview(app: AppHandle, path: String) -> Result<(), String> {
     let canonical = validate_preview_path(&path)?;
     if !try_select_in_notes_folder(&app, &canonical) {
-        open_external_file_preview(&app, &canonical)?;
+        open_external_file_in_main(&app, &canonical)?;
     }
     Ok(())
 }
 
-// Handle CLI arguments: select managed notes or open external markdown files directly.
+// Handle CLI arguments: select managed notes or open external Markdown files in the main window.
 fn handle_cli_args(app: &AppHandle, args: &[String], cwd: &str) {
     for arg in args.iter().skip(1) {
         // Skip flags
@@ -3861,7 +3833,7 @@ fn handle_cli_args(app: &AppHandle, args: &[String], cwd: &str) {
 
         if is_markdown_extension(&path) && path.is_file() {
             if !try_select_in_notes_folder(app, &path) {
-                if let Err(error) = open_external_file_preview(app, &path) {
+                if let Err(error) = open_external_file_in_main(app, &path) {
                     eprintln!("Failed to open markdown file {:?}: {}", path, error);
                 }
             }
@@ -3956,7 +3928,7 @@ pub fn run() {
                 debounce_map: Arc::new(Mutex::new(HashMap::new())),
                 pending_note_selections: Mutex::new(Vec::new()),
                 main_ui_ready: Mutex::new(false),
-                preview_files: Mutex::new(HashMap::new()),
+                open_external_file: Mutex::new(None),
             };
             app.manage(state);
 
@@ -3989,7 +3961,7 @@ pub fn run() {
                 for path in paths {
                     if is_markdown_extension(path) && path.is_file() {
                         if !try_select_in_notes_folder(app, path) {
-                            if let Err(error) = open_external_file_preview(app, path) {
+                            if let Err(error) = open_external_file_in_main(app, path) {
                                 eprintln!("Failed to open dropped markdown file {:?}: {}", path, error);
                             }
                         }
@@ -4054,7 +4026,7 @@ pub fn run() {
             import_file_to_folder,
             open_file_preview,
             mark_main_ui_ready,
-            get_preview_file_path,
+            get_open_external_file,
             install_cli,
             uninstall_cli,
             get_cli_status,
@@ -4072,7 +4044,7 @@ pub fn run() {
                 if let Ok(path) = url.to_file_path() {
                     if is_markdown_extension(&path) && path.is_file() {
                         if !try_select_in_notes_folder(_app_handle, &path) {
-                            if let Err(error) = open_external_file_preview(_app_handle, &path) {
+                            if let Err(error) = open_external_file_in_main(_app_handle, &path) {
                                 eprintln!("Failed to open markdown file {:?}: {}", path, error);
                             }
                         }

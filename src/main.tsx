@@ -2,48 +2,59 @@ import "./lib/tauri-mock";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import "katex/dist/katex.min.css";
 import App from "./App";
-import { PreviewApp } from "./components/preview/PreviewApp";
-import { ThemeProvider } from "./context/ThemeContext";
-import { TooltipProvider, Toaster } from "./components/ui";
 import "./App.css";
 
 function Root() {
-  const [previewFilePath, setPreviewFilePath] = React.useState<
-    string | null | undefined
-  >(undefined);
+  const [externalFilePath, setExternalFilePath] = React.useState<string | null>(
+    null,
+  );
 
   React.useEffect(() => {
     let cancelled = false;
+    let unlisten: (() => void) | undefined;
 
-    invoke<string | null>("get_preview_file_path")
-      .then((path) => {
-        if (!cancelled) setPreviewFilePath(path);
-      })
-      .catch((error) => {
-        console.error("Failed to resolve preview file path:", error);
-        if (!cancelled) setPreviewFilePath(null);
+    const registerExternalFileListener = async () => {
+      const disposeOpen = await listen<string>("open-external-file", (event) => {
+        setExternalFilePath(event.payload);
       });
+      const disposeClose = await listen("close-external-file", () => {
+        setExternalFilePath(null);
+      });
+      const dispose = () => {
+        disposeOpen();
+        disposeClose();
+      };
+
+      if (cancelled) {
+        dispose();
+        return;
+      }
+      unlisten = dispose;
+
+      try {
+        const path = await invoke<string | null>("get_open_external_file");
+        if (!cancelled) setExternalFilePath(path);
+      } catch (error) {
+        console.error("Failed to resolve external file path:", error);
+      }
+    };
+
+    void registerExternalFileListener();
 
     return () => {
       cancelled = true;
+      unlisten?.();
     };
   }, []);
 
-  if (previewFilePath === undefined) {
-    return <div className="h-full bg-bg" />;
-  }
-
-  if (!previewFilePath) return <App />;
-
   return (
-    <ThemeProvider>
-      <Toaster />
-      <TooltipProvider>
-        <PreviewApp filePath={previewFilePath} />
-      </TooltipProvider>
-    </ThemeProvider>
+    <App
+      externalFilePath={externalFilePath}
+      onExitExternalFile={() => setExternalFilePath(null)}
+    />
   );
 }
 

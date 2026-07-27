@@ -110,6 +110,9 @@ $$x^2 + y^2 = z^2$$`,
         console.log(`[Tauri Mock Invoke] cmd="${cmd}" args=`, args);
 
         switch (cmd) {
+          case "get_open_external_file":
+            return null;
+
           // System/Notes Folders
           case "get_notes_folder": {
             return localStorage.getItem("scratch:notesFolder") || "/documents/scratch-notes";
