@@ -3959,11 +3959,10 @@ pub fn run() {
             if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
                 let app = window.app_handle();
                 for path in paths {
-                    if is_markdown_extension(path) && path.is_file() {
-                        if !try_select_in_notes_folder(app, path) {
-                            if let Err(error) = open_external_file_in_main(app, path) {
-                                eprintln!("Failed to open dropped markdown file {:?}: {}", path, error);
-                            }
+                    if is_markdown_extension(path) && path.is_file()
+                        && !try_select_in_notes_folder(app, path) {
+                        if let Err(error) = open_external_file_in_main(app, path) {
+                            eprintln!("Failed to open dropped markdown file {:?}: {}", path, error);
                         }
                     }
                 }
