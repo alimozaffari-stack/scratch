@@ -84,6 +84,8 @@ This project was originally derived from [Scratch by Eric Li](https://github.com
 
 This repository is not affiliated with, endorsed by, or supported by the upstream project. Please use this repository for this edition’s releases and issues. The upstream project’s README identifies its licence as MIT; applicable upstream copyright and licence notices remain in effect.
 
+Automatic in-app updates are disabled until this edition has its own signed update channel. Install releases only from this repository.
+
 ## License
 
 MIT
