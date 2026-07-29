@@ -16,7 +16,6 @@
         "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
         "@tauri-apps/plugin-dialog": "^2.6.0",
         "@tauri-apps/plugin-opener": "^2",
-        "@tauri-apps/plugin-updater": "^2.10.0",
         "@tiptap/core": "^3.19.0",
         "@tiptap/extension-code-block-lowlight": "^3.20.0",
         "@tiptap/extension-color": "^3.29.0",
@@ -361,7 +360,6 @@
 
     "@tauri-apps/plugin-opener": ["@tauri-apps/plugin-opener@2.5.4", "", { "dependencies": { "@tauri-apps/api": "^2.11.0" } }, "sha512-1HnPkb+AmgO29HBazm4uPLKB+r7zzcTBW1d0fyYp1uP+jwtpoiNDGKMMzz58SFp49nOIrxdE3aUJtT57lfO9CQ=="],
 
-    "@tauri-apps/plugin-updater": ["@tauri-apps/plugin-updater@2.10.1", "", { "dependencies": { "@tauri-apps/api": "^2.10.1" } }, "sha512-NFYMg+tWOZPJdzE/PpFj2qfqwAWwNS3kXrb1tm1gnBJ9mYzZ4WDRrwy8udzWoAnfGCHLuePNLY1WVCNHnh3eRA=="],
 
     "@tiptap/core": ["@tiptap/core@3.29.0", "", { "peerDependencies": { "@tiptap/pm": "3.29.0" } }, "sha512-A/lrhKpOYtl0V5pmPS00Zps8pgBe1qDOoD9fzsumDSZ3HP8W398C959Jgru75PNFokAya9COPD3iaKP3NWF25g=="],
 

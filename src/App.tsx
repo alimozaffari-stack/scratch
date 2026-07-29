@@ -6,6 +6,8 @@ import { listen } from "@tauri-apps/api/event";
 import { GitProvider } from "./context/GitContext";
 import { TooltipProvider, Toaster } from "./components/ui";
 import { Sidebar } from "./components/layout/Sidebar";
+import { SidebarResizeHandle } from "./components/layout/SidebarResizeHandle";
+import { SIDEBAR_DEFAULT_PX } from "./lib/sidebar";
 import { Editor } from "./components/editor/Editor";
 import { PreviewApp } from "./components/preview/PreviewApp";
 import type { Editor as TiptapEditor } from "@tiptap/react";
@@ -23,13 +25,10 @@ import { AiEditModal } from "./components/ai/AiEditModal";
 import { CommentsModal } from "./components/notes/CommentsModal";
 import { AiResponseToast } from "./components/ai/AiResponseToast";
 import { KeyboardShortcutsModal } from "./components/shortcuts/KeyboardShortcutsModal";
-import {
-  check as checkForUpdate,
-  type Update,
-} from "@tauri-apps/plugin-updater";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import * as aiService from "./services/ai";
 import type { AiProvider } from "./services/ai";
+import { isMac, isWindows } from "./lib/platform";
 
 type ViewState = "notes" | "settings";
 
@@ -527,12 +526,14 @@ function AppContent({
           <>
             <div
               data-sidebar
-              className={`transition-all duration-500 ease-out overflow-hidden ${!sidebarVisible || focusMode ? "opacity-0 -translate-x-4 w-0 pointer-events-none" : "opacity-100 translate-x-0 w-64"}`}
+              style={{ width: (!sidebarVisible || focusMode) ? 0 : `var(--sidebar-width, ${SIDEBAR_DEFAULT_PX}px)` }}
+              className={`relative transition-all duration-500 ease-out overflow-hidden ${!sidebarVisible || focusMode ? "opacity-0 -translate-x-4 pointer-events-none" : "opacity-100 translate-x-0"}`}
             >
               <Sidebar
                 onOpenSettings={toggleSettings}
                 onCreateNote={createManagedNote}
               />
+              {sidebarVisible && !focusMode && <SidebarResizeHandle />}
             </div>
             {externalFilePath ? (
               <PreviewApp
@@ -624,82 +625,6 @@ function AppContent({
   );
 }
 
-// Shared update check — used by startup and manual "Check for Updates"
-async function showUpdateToast(): Promise<"update" | "no-update" | "error"> {
-  try {
-    const update = await checkForUpdate();
-    if (update) {
-      toast(<UpdateToast update={update} toastId="update-toast" />, {
-        id: "update-toast",
-        duration: Infinity,
-        closeButton: true,
-      });
-      return "update";
-    }
-    return "no-update";
-  } catch (err) {
-    // Network errors and 404s (no release published yet) are not real failures
-    const msg = String(err);
-    if (
-      msg.includes("404") ||
-      msg.includes("network") ||
-      msg.includes("Could not fetch")
-    ) {
-      return "no-update";
-    }
-    console.error("Update check failed:", err);
-    return "error";
-  }
-}
-
-export { showUpdateToast };
-
-function UpdateToast({
-  update,
-  toastId,
-}: {
-  update: Update;
-  toastId: string | number;
-}) {
-  const [installing, setInstalling] = useState(false);
-
-  const handleUpdate = async () => {
-    setInstalling(true);
-    try {
-      await update.downloadAndInstall();
-      toast.dismiss(toastId);
-      toast.success("Update installed! Restart Scratch to apply.", {
-        duration: Infinity,
-        closeButton: true,
-      });
-    } catch (err) {
-      console.error("Update failed:", err);
-      toast.error("Update failed. Please try again later.");
-      setInstalling(false);
-    }
-  };
-
-  return (
-    <div className="flex flex-col gap-1">
-      <div className="font-medium text-sm">
-        Update Available: v{update.version}
-      </div>
-      {update.body && (
-        <div className="text-xs text-text-muted line-clamp-3">
-          {update.body}
-        </div>
-      )}
-      <button
-        onClick={handleUpdate}
-        disabled={installing}
-        className="self-start mt-1 text-xs font-medium px-3 py-1.5 rounded-md bg-text text-bg hover:opacity-90 disabled:opacity-50 transition-opacity"
-      >
-        {installing ? "Installing..." : "Update Now"}
-      </button>
-    </div>
-  );
-}
-
 interface AppProps {
   externalFilePath?: string | null;
   onExitExternalFile?: () => void;
@@ -723,16 +648,8 @@ function App({
 
   // Add platform class for OS-specific styling (e.g., keyboard shortcuts)
   useEffect(() => {
-    const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
-    document.documentElement.classList.add(
-      isMac ? "platform-mac" : "platform-other",
-    );
-  }, []);
-
-  // Check for app updates on startup
-  useEffect(() => {
-    const timer = setTimeout(() => showUpdateToast(), 3000);
-    return () => clearTimeout(timer);
+    const os = isMac ? "mac" : isWindows ? "windows" : "linux";
+    document.documentElement.classList.add(`platform-${os}`);
   }, []);
 
   return (
